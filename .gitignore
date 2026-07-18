@@ -1,0 +1,15 @@
+# Build artifacts
+*.o
+*.d
+*.a
+explorer
+
+# Generated
+compile_commands.json
+
+# IDE / editor caches
+.idea/
+.cache/
+
+# Java reference implementation (documented in docs/)
+TPR-4x4x4-Solver/
