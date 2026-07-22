@@ -9,13 +9,6 @@ const char *move2str[36] = {
     "d","d2","d'","l","l2","l'","b","b2","b'"
 };
 
-const char *moveIstr[36] = {
-    "U'","U2","U","R'","R2","R","F'","F2","F",
-    "D'","D2","D","L'","L2","L","B'","B2","B",
-    "u'","u2","u","r'","r2","r","f'","f2","f",
-    "d'","d2","d","l'","l2","l","b'","b2","b"
-};
-
 /*
  * Phase 2 move set (28 moves): all 18 outer + Uw2 Fw2 Dw2 Bw2 + all Rw Lw.
  * Indices match moves.h definitions.
@@ -81,7 +74,7 @@ static void build_ckmv_for_set(bool *table,        /* [N+1][N] flattened */
     /* table is (N+1) × N, row-major, caller passes flattened pointer. */
     bool (*T)[N] = (bool (*)[N])table;  /* VLA pointer trick */
 
-    /* Sentinel row N: no prev move → nothing is redundant. */
+    /* Sentinel row N: no prev move -> nothing is redundant. */
     memset(T[N], 0, sizeof(bool) * (size_t)N);
 
     for (int prev = 0; prev < N; prev++) {

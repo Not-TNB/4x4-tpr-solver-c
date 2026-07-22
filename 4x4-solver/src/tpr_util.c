@@ -2,7 +2,9 @@
 #include <string.h>
 
 int Cnk[25][25];
-int fact[13];
+int fact[13] = {
+    1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600
+};
 
 void tpr_util_init(void) {
     /* Pascal's triangle */
@@ -13,30 +15,29 @@ void tpr_util_init(void) {
         for (int k = n+1; k < 25; k++)
             Cnk[n][k] = 0;
     }
-
-    /* Factorials */
-    fact[0] = 1;
-    for (int i = 1; i < 13; i++)
-        fact[i] = fact[i-1] * i;
+    // /* Factorials */
+    // fact[0] = 1;
+    // for (int i = 1; i < 13; i++)
+    //     fact[i] = fact[i-1] * i;
 }
 
 void swap4_int(int *arr, int a, int b, int c, int d, int key) {
     int tmp;
     switch (key) {
-        case 0: tmp=arr[a]; arr[a]=arr[b]; arr[b]=arr[c]; arr[c]=arr[d]; arr[d]=tmp; break;
+        case 0: tmp=arr[d]; arr[d]=arr[c]; arr[c]=arr[b]; arr[b]=arr[a]; arr[a]=tmp; break; /* CW:  a←d←c←b←a */
         case 1: tmp=arr[a]; arr[a]=arr[c]; arr[c]=tmp;
                 tmp=arr[b]; arr[b]=arr[d]; arr[d]=tmp; break;
-        case 2: tmp=arr[d]; arr[d]=arr[c]; arr[c]=arr[b]; arr[b]=arr[a]; arr[a]=tmp; break;
+        case 2: tmp=arr[a]; arr[a]=arr[b]; arr[b]=arr[c]; arr[c]=arr[d]; arr[d]=tmp; break; /* CCW: a->b->c->d->a */
     }
 }
 
 void swap4_u8(uint8_t *arr, int a, int b, int c, int d, int key) {
     uint8_t tmp;
     switch (key) {
-        case 0: tmp=arr[a]; arr[a]=arr[b]; arr[b]=arr[c]; arr[c]=arr[d]; arr[d]=tmp; break;
+        case 0: tmp=arr[d]; arr[d]=arr[c]; arr[c]=arr[b]; arr[b]=arr[a]; arr[a]=tmp; break;
         case 1: tmp=arr[a]; arr[a]=arr[c]; arr[c]=tmp;
                 tmp=arr[b]; arr[b]=arr[d]; arr[d]=tmp; break;
-        case 2: tmp=arr[d]; arr[d]=arr[c]; arr[c]=arr[b]; arr[b]=arr[a]; arr[a]=tmp; break;
+        case 2: tmp=arr[a]; arr[a]=arr[b]; arr[b]=arr[c]; arr[c]=arr[d]; arr[d]=tmp; break;
     }
 }
 

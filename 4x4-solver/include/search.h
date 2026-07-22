@@ -21,7 +21,7 @@
  *   Phase 4 (solve333): The accumulated move sequence fully reduces the
  *             4×4 to an equivalent 3×3. Call min2phase to finish.
  *
- * Beam capacities are hardcoded constants matching the reference Java.
+ * Beam capacities are hardcoded constants.
  */
 
 #include "cubie.h"

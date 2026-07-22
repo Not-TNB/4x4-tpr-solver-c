@@ -56,8 +56,6 @@
 
 /* Human-readable move strings indexed by move index 0..35. */
 extern const char *move2str[36];
-/* Inverse move strings (same index → inverse move label). */
-extern const char *moveIstr[36];
 
 /*
  * Phase 2 move set: 28 moves.
@@ -75,7 +73,7 @@ extern int move2std[29];
  */
 extern int move3std[21];
 
-/* Reverse mappings: standard index → phase index (-1 if not in set). */
+/* Reverse mappings: standard index -> phase index (-1 if not in set). */
 extern int std2move[37];
 extern int std3move[37];
 

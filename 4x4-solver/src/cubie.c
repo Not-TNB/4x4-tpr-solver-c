@@ -2,9 +2,7 @@
 #include "../include/tpr_util.h"
 #include <string.h>
 
-/* Per-slot macros: private to this file.  Encoding: face*16 + local_slot.
- * Only safe to use here — these names (fc, fd, ff, etc.) collide with
- * common identifiers and must not appear in public headers. */
+/* face*16+local_slot shorthands; private -- fc/fd/ff aliased to avoid clashes */
 #define FSLOT(face, local) ((face)*16 + (local))
 #define u0  FSLOT(0,0)
 #define u1  FSLOT(0,1)
@@ -104,46 +102,40 @@
 #define bf  FSLOT(5,15)
 
 /* -------------------------------------------------------------------------
- * Facelet slot → center/edge/corner position tables.
- * These mirror the Java source arrays (centerFacelet, EdgeColor, EdgeMap,
- * cornerFacelet).  All values are verified against the reference.
+ * Facelet slot -> centre/edge/corner position tables.
  * ------------------------------------------------------------------------- */
 
-/* Solved-state facelet slot for each of the 24 center positions.
- * Ordering: U0-U3, D0-D3, F0-F3, B0-B3, R0-R3, L0-L3
- * (matches Java Center.centerFacelet). */
+/* Solved-state slot for each centre position (U0-U3, D0-D3, F0-F3, B0-B3, R0-R3, L0-L3).
+ * Within each face group: pos2=local10 (BR), pos3=local9 (BL) -- not row-major. */
 const uint8_t centerFacelet[24] = {
-    /* U centers: slots 5,6,9,10 on U face */
-    FSLOT(0,5), FSLOT(0,6), FSLOT(0,9), FSLOT(0,10),
-    /* D centers */
-    FSLOT(3,5), FSLOT(3,6), FSLOT(3,9), FSLOT(3,10),
-    /* F centers */
-    FSLOT(2,5), FSLOT(2,6), FSLOT(2,9), FSLOT(2,10),
-    /* B centers */
-    FSLOT(5,5), FSLOT(5,6), FSLOT(5,9), FSLOT(5,10),
-    /* R centers */
-    FSLOT(1,5), FSLOT(1,6), FSLOT(1,9), FSLOT(1,10),
-    /* L centers */
-    FSLOT(4,5), FSLOT(4,6), FSLOT(4,9), FSLOT(4,10),
+    /* U centres */
+    FSLOT(0,5), FSLOT(0,6), FSLOT(0,10), FSLOT(0,9),
+    /* D centres */
+    FSLOT(3,5), FSLOT(3,6), FSLOT(3,10), FSLOT(3,9),
+    /* F centres */
+    FSLOT(2,5), FSLOT(2,6), FSLOT(2,10), FSLOT(2,9),
+    /* B centres */
+    FSLOT(5,5), FSLOT(5,6), FSLOT(5,10), FSLOT(5,9),
+    /* R centres */
+    FSLOT(1,5), FSLOT(1,6), FSLOT(1,10), FSLOT(1,9),
+    /* L centres */
+    FSLOT(4,5), FSLOT(4,6), FSLOT(4,10), FSLOT(4,9),
 };
 
-/* Face color for each of the 12 edge-pair positions [pair][0=A side, 1=B side].
- * Face indices: U=0 R=1 F=2 D=3 L=4 B=5. */
+/* Face colour by edge pair: [pair][0=A, 1=B]. */
 const int edge_color[12][2] = {
     {0,2},{0,1},{0,5},{0,4},  /* UF UR UB UL */
     {3,2},{3,1},{3,5},{3,4},  /* DF DR DB DL */
     {2,1},{2,4},{5,1},{5,4},  /* FR FL BR BL */
 };
 
-/* Maps wing-edge slot (0..23) to the corresponding 3×3 edge facelet.
- * A-wings (0..11) and B-wings (12..23) each provide one sticker
- * for the reduced 3×3 cube. */
+/* Wing slot (0..23) -> 3×3 edge facelet for the reduced cube. */
 const int edge_map[24] = {
-    /* A-wings: the "primary" facelet of each edge */
+    /* Primary edge facelet */
     FSLOT(0,13), FSLOT(0,7), FSLOT(0,1), FSLOT(0,4),  /* UF UR UB UL */
     FSLOT(3,1),  FSLOT(3,7), FSLOT(3,13),FSLOT(3,4),  /* DF DR DB DL */
     FSLOT(2,7),  FSLOT(2,4), FSLOT(5,4), FSLOT(5,7),  /* FR FL BR BL */
-    /* B-wings: the "secondary" facelet */
+    /* Secondary edge facelet */
     FSLOT(2,1),  FSLOT(1,4), FSLOT(5,1), FSLOT(4,1),  /* UF UR UB UL */
     FSLOT(2,13), FSLOT(1,13),FSLOT(5,13),FSLOT(4,13), /* DF DR DB DL */
     FSLOT(1,7),  FSLOT(4,7), FSLOT(1,4), FSLOT(4,4),  /* FR FL BR BL */
@@ -162,12 +154,31 @@ void center_cube_copy(CenterCube *dst, const CenterCube *src) {
     memcpy(dst->ct, src->ct, 24);
 }
 
+static const uint8_t ct_cycles[12][3][4] = {
+    /* U  */ {{ 0, 1, 2, 3}},
+    /* R  */ {{16,17,18,19}},
+    /* F  */ {{ 8, 9,10,11}},
+    /* D  */ {{ 4, 5, 6, 7}},
+    /* L  */ {{20,21,22,23}},
+    /* B  */ {{12,13,14,15}},
+    /* Uw */ {{ 0, 1, 2, 3}, { 8,20,12,16}, { 9,21,13,17}},
+    /* Rw */ {{16,17,18,19}, { 1,15, 5, 9}, { 2,12, 6,10}},
+    /* Fw */ {{ 8, 9,10,11}, { 2,19, 4,21}, { 3,16, 5,22}},
+    /* Dw */ {{ 4, 5, 6, 7}, {10,18,14,22}, {11,19,15,23}},
+    /* Lw */ {{20,21,22,23}, { 0, 8, 4,14}, { 3,11, 7,13}},
+    /* Bw */ {{12,13,14,15}, { 1,20, 7,18}, { 0,23, 6,17}},
+};
+static const int ct_ncycles[12] = {1,1,1,1,1,1, 3,3,3,3,3,3};
+
 void center_cube_move(CenterCube *c, int m) {
-    /* TODO: apply move m (0..35) to c->ct using swap4_u8 cycles. */
-    (void)c; (void)m;
+    const int axis = m / 3, key = m % 3;
+    for (int i = 0; i < ct_ncycles[axis]; i++) {
+        const uint8_t *cyc = ct_cycles[axis][i];
+        swap4_u8(c->ct, cyc[0], cyc[1], cyc[2], cyc[3], key);
+    }
 }
 
-void center_cube_fill_333_facelet(const CenterCube *c, char *facelet54) {
+void center_cube_fill_333_facelet(const CenterCube *c, const char *facelet54) {
     /* TODO: set facelet54[face*9+4] from c->ct. */
     (void)c; (void)facelet54;
 }
@@ -184,24 +195,48 @@ void edge_cube_copy(EdgeCube *dst, const EdgeCube *src) {
     memcpy(dst->ep, src->ep, 24);
 }
 
+static const uint8_t ep_cycles[12][3][4] = {
+    /* U  */ {{ 0, 1, 2, 3}, {12,13,14,15}},
+    /* R  */ {{11,15,10,19}, {23, 3,22, 7}},
+    /* F  */ {{ 0,11, 6, 8}, {12,23,18,20}},
+    /* D  */ {{ 4, 5, 6, 7}, {16,17,18,19}},
+    /* L  */ {{ 1,20, 5,21}, {13, 8,17, 9}},
+    /* B  */ {{ 2, 9, 4,10}, {14,21,16,22}},
+    /* Uw */ {{ 0, 1, 2, 3}, {12,13,14,15}, { 9,22,11,20}},
+    /* Rw */ {{11,15,10,19}, {23, 3,22, 7}, { 2,16, 6,12}},
+    /* Fw */ {{ 0,11, 6, 8}, {12,23,18,20}, { 3,19, 5,13}},
+    /* Dw */ {{ 4, 5, 6, 7}, {16,17,18,19}, { 8,23,10,21}},
+    /* Lw */ {{ 1,20, 5,21}, {13, 8,17, 9}, {14, 0,18, 4}},
+    /* Bw */ {{ 2, 9, 4,10}, {14,21,16,22}, { 7,15, 1,17}},
+};
+static const int ep_ncycles[12] = {2,2,2,2,2,2, 3,3,3,3,3,3};
+
 void edge_cube_move(EdgeCube *e, int m) {
-    /* TODO: apply move m to e->ep. */
-    (void)e; (void)m;
+    const int axis = m / 3, key = m % 3;
+    for (int i = 0; i < ep_ncycles[axis]; i++) {
+        const uint8_t *cyc = ep_cycles[axis][i];
+        swap4_u8(e->ep, cyc[0], cyc[1], cyc[2], cyc[3], key);
+    }
 }
 
 bool edge_cube_check(const EdgeCube *e) {
-    /* TODO: verify each pair ep[i] and ep[i+12] belong to the same edge-pair. */
-    (void)e;
-    return false;
+    int ck = 0, parity = 0;
+    for (int i = 0; i < 12; i++) {
+        ck |= 1 << e->ep[i];
+        if (e->ep[i] >= 12) parity ^= 1;
+    }
+    ck &= (ck >> 12);
+    return ck == 0 && parity == 0;
 }
 
 int edge_cube_parity(const EdgeCube *e) {
-    /* TODO: return parity of ep[0..23] permutation. */
-    (void)e;
-    return 0;
+    uint8_t perm[12];
+    for (int i = 0; i < 12; i++)
+        perm[i] = e->ep[i] % 12;
+    return parity_u8(perm, 12);
 }
 
-void edge_cube_fill_333_facelet(const EdgeCube *e, char *facelet54) {
+void edge_cube_fill_333_facelet(const EdgeCube *e, const char *facelet54) {
     /* TODO: write edge stickers into facelet54 via edge_map. */
     (void)e; (void)facelet54;
 }
@@ -238,13 +273,37 @@ int corner_cube_parity(const CornerCube *c) {
     return parity_u8(c->cp, 8);
 }
 
-void corner_cube_fill_333_facelet(const CornerCube *c, char *facelet54) {
+void corner_cube_fill_333_facelet(const CornerCube *c, const char *facelet54) {
     /* TODO: write corner stickers into facelet54. */
     (void)c; (void)facelet54;
 }
 
+static void set_twist(uint8_t *co, int idx) {
+    int twst = 0;
+    for (int i = 6; i >= 0; i--) {
+        twst += co[i] = (uint8_t)(idx % 3);
+        idx /= 3;
+    }
+    co[7] = (uint8_t)((15 - twst) % 3);
+}
+
 void corner_cube_init_moves(void) {
-    /* TODO: populate corner_move_cube[18] for the 18 outer face moves. */
+    static const int base[6][2] = {
+        {15120,    0},   /* U */
+        {21021, 1494},   /* R */
+        { 8064, 1236},   /* F */
+        {    9,    0},   /* D */
+        { 1230,  412},   /* L */
+        {  224,  137},   /* B */
+    };
+
+    for (int f = 0; f < 6; f++) {
+        const int a = 3*f;
+        set8perm(corner_move_cube[a].cp, base[f][0]);
+        set_twist(corner_move_cube[a].co, base[f][1]);
+        corner_cube_mult(&corner_move_cube[a],   &corner_move_cube[a], &corner_move_cube[a+1]);
+        corner_cube_mult(&corner_move_cube[a+1], &corner_move_cube[a], &corner_move_cube[a+2]);
+    }
 }
 
 /* -------------------------------------------------------------------------
@@ -272,7 +331,7 @@ void fullcube_copy(FullCube *dst, const FullCube *src) {
 }
 
 void fullcube_move(FullCube *c, int m) {
-    /* Lazy: only buffer; do not apply to sub-cubes yet. */
+    /* lazy: buffer only */
     if (c->moveLength < FULLCUBE_MOVE_BUF)
         c->moveBuffer[c->moveLength++] = (uint8_t)m;
 }
@@ -306,13 +365,83 @@ CornerCube *fullcube_get_corner(FullCube *c) {
 }
 
 void fullcube_from_facelet(FullCube *c, const char *facelet96) {
-    /* TODO: parse the 96-char facelet string and populate all sub-cubes. */
+    /* ef[i][0..1] = solved-state slots of wing i; /16 gives face colour. */
+    static const uint8_t ef[24][2] = {
+        {FSLOT(0,13), FSLOT(2, 1)},  /* 0:  UF A */
+        {FSLOT(0, 4), FSLOT(4, 1)},  /* 1:  UL A */
+        {FSLOT(0, 2), FSLOT(5, 1)},  /* 2:  UB A */
+        {FSLOT(0,11), FSLOT(1, 1)},  /* 3:  UR A */
+        {FSLOT(3,13), FSLOT(5,14)},  /* 4:  DB A */
+        {FSLOT(3, 4), FSLOT(4,14)},  /* 5:  DL A */
+        {FSLOT(3, 2), FSLOT(2,14)},  /* 6:  DF A */
+        {FSLOT(3,11), FSLOT(1,14)},  /* 7:  DR A */
+        {FSLOT(4,11), FSLOT(2, 8)},  /* 8:  FL A */
+        {FSLOT(4, 4), FSLOT(5, 7)},  /* 9:  BL A */
+        {FSLOT(1,11), FSLOT(5, 8)},  /* 10: BR A */
+        {FSLOT(1, 4), FSLOT(2, 7)},  /* 11: FR A */
+        {FSLOT(2, 2), FSLOT(0,14)},  /* 12: UF B */
+        {FSLOT(4, 2), FSLOT(0, 8)},  /* 13: UL B */
+        {FSLOT(5, 2), FSLOT(0, 1)},  /* 14: UB B */
+        {FSLOT(1, 2), FSLOT(0, 7)},  /* 15: UR B */
+        {FSLOT(5,13), FSLOT(3,14)},  /* 16: DB B */
+        {FSLOT(4,13), FSLOT(3, 8)},  /* 17: DL B */
+        {FSLOT(2,13), FSLOT(3, 1)},  /* 18: DF B */
+        {FSLOT(1,13), FSLOT(3, 7)},  /* 19: DR B */
+        {FSLOT(2, 4), FSLOT(4, 7)},  /* 20: FL B */
+        {FSLOT(5,11), FSLOT(4, 8)},  /* 21: BL B */
+        {FSLOT(5, 4), FSLOT(1, 7)},  /* 22: BR B */
+        {FSLOT(2,11), FSLOT(1, 8)},  /* 23: FR B */
+    };
+    /* cf[i]: [0]=U/D slot [1]=R/L slot [2]=F/B slot. */
+    static const uint8_t cf[8][3] = {
+        {FSLOT(0,15), FSLOT(1, 0), FSLOT(2, 3)},  /* 0: URF */
+        {FSLOT(0,12), FSLOT(2, 0), FSLOT(4, 3)},  /* 1: UFL */
+        {FSLOT(0, 0), FSLOT(4, 0), FSLOT(5, 3)},  /* 2: ULB */
+        {FSLOT(0, 3), FSLOT(5, 0), FSLOT(1, 3)},  /* 3: UBR */
+        {FSLOT(3, 3), FSLOT(2,15), FSLOT(1,12)},  /* 4: DFR */
+        {FSLOT(3, 0), FSLOT(4,15), FSLOT(2,12)},  /* 5: DLF */
+        {FSLOT(3,12), FSLOT(5,15), FSLOT(4,12)},  /* 6: DBL */
+        {FSLOT(3,15), FSLOT(1,15), FSLOT(5,12)},  /* 7: DRB */
+    };
+
     fullcube_identity(c);
-    (void)facelet96;
+
+    uint8_t f[96];
+    for (int i = 0; i < 96; i++) {
+        const char *p = strchr("URFDLB", facelet96[i]);
+        f[i] = p ? (uint8_t)(p - "URFDLB") : 0;
+    }
+
+    for (int i = 0; i < 24; i++)
+        c->center.ct[i] = f[centerFacelet[i]];
+
+    for (int i = 0; i < 24; i++) {
+        for (int j = 0; j < 24; j++) {
+            if (f[ef[i][0]] == ef[j][0] / 16 && f[ef[i][1]] == ef[j][1] / 16) {
+                c->edge.ep[i] = (uint8_t)j;
+                break;
+            }
+        }
+    }
+
+    for (int i = 0; i < 8; i++) {
+        int ori;
+        for (ori = 0; ori < 3; ori++)
+            if (f[cf[i][ori]] == 0 || f[cf[i][ori]] == 3)
+                break;
+        uint8_t col1 = f[cf[i][(ori + 1) % 3]];
+        uint8_t col2 = f[cf[i][(ori + 2) % 3]];
+        for (int j = 0; j < 8; j++) {
+            if (col1 == cf[j][1] / 16 && col2 == cf[j][2] / 16) {
+                c->corner.cp[i] = (uint8_t)j;
+                c->corner.co[i] = (uint8_t)(ori % 3);
+                break;
+            }
+        }
+    }
 }
 
 void fullcube_to_333_facelet(FullCube *c, char *out54) {
-    /* Ensure all sub-cubes are up to date. */
     CenterCube *ct = fullcube_get_center(c);
     EdgeCube   *e  = fullcube_get_edge(c);
     CornerCube *co = fullcube_get_corner(c);

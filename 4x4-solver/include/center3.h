@@ -2,90 +2,56 @@
 #define CENTER3_H
 
 /*
- * Phase 3 — Center3 coordinate.
+ * Phase 3 -- Center3 coordinate.
  *
- * Goal: fully solve all 24 X-centres (all centers solved) while simultaneously
- *       pairing all 24 wing edges (Edge3 sub-goal).
- *
- * The Center3 state space is a product of three independent sub-coordinates:
- *
- *   sliceU  — arrangement of the 4 U-center stickers within the 8 slots on
- *              the U and D faces that were already constrained by Phase 2.
- *              Range: C(8,4) = 70.
- *
- *   sliceR  — same for the 4 R-center stickers within the 8 R/L equatorial
- *              slots.  Range: C(8,4) = 70.
- *
- *   sliceF  — same for the 4 F-center stickers within the 8 F/B equatorial
- *              slots.  Range: C(8,4) = 70.
- *
- *   eperm   — corner/edge parity parity bit (1 bit) for even permutation
- *              constraint imposed by Phase 2 reductions.
- *
- * Combined: 70 × 70 × 70 × 2 = 686,000 states (from which parity halves it
- * to 343,000 reachable). But the Java TPR stores the full 70×70×70×2 product
- * without further reduction.
+ * Combined coordinate over (ud C(7,4)=35) × (fb C(7,4)=35) × (rl 12-reachable) × (parity 2)
+ * = 35 × 35 × 12 × 2 = 29,400 states.
  *
  * Tables:
- *   ctmv3[70][20]     — move table for each slice coordinate (same for all 3,
- *                        since all slices use the same C(8,4) combinatorics).
- *   c3prun[29400]     — pruning table; 29400 = 35×35×12×2 (packed sym classes
- *                        of the product; see Java Center3.java for packing).
- *
- * NOTE: The 20-move Phase 3 move set is defined in moves.h (move3std[]).
+ *   ctmove[29400][20]  -- combined move table for all 20 Phase 3 moves
+ *   c3prun[29400]      -- BFS pruning distances (uses first 17 of 20 moves)
  */
 
 #include <stdint.h>
 
-#define CENTER3_SLICE_COORDS  70    /* C(8,4)                        */
-#define CENTER3_EPERM_COORDS  2     /* parity bit                    */
-#define CENTER3_PRUN_SIZE  29400    /* = 35 × 35 × 12 × 2           */
-#define CENTER3_PHASE3_MOVES 20
+#define CENTER3_STATE_COORDS   29400   /* 35 × 35 × 12 × 2 */
+#define CENTER3_PHASE3_MOVES   20
 
-/* -------------------------------------------------------------------------
- * Tables
- * ------------------------------------------------------------------------- */
-extern uint8_t  ctmv3 [CENTER3_SLICE_COORDS][CENTER3_PHASE3_MOVES];
-extern uint8_t  c3prun[CENTER3_PRUN_SIZE];
+extern uint16_t ctmove[CENTER3_STATE_COORDS][CENTER3_PHASE3_MOVES];
+extern uint8_t  c3prun[CENTER3_STATE_COORDS];
 
-/* -------------------------------------------------------------------------
- * Coordinate functions
- *
- * Each "slice" sub-coordinate is an index in 0..69 encoding which 4 of the
- * 8 relevant center slots contain a given face color.
- * The 8 relevant slots per axis are fixed after Phase 2.
- * ------------------------------------------------------------------------- */
+/* Working state: binary arrays encoding which of the two colors each slot holds. */
+typedef struct {
+    uint8_t ud[8];  /* (ct[i]   / 3) ^ 1 for i=0..7  (1=U-colored, 0=D-colored) */
+    uint8_t fb[8];  /* (ct[i+8] / 3) ^ 1 for i=0..7  (1=F-colored, 0=B-colored) */
+    uint8_t rl[8];  /* (ct[i+16]/ 3) ^ 1 ^ par for i=0..7                        */
+    int     parity;
+} Center3State;
 
-/* Get sliceU coord from the current CenterCube ct[24]. */
-int center3_get_slice_u(const uint8_t ct[24]);
-int center3_get_slice_r(const uint8_t ct[24]);
-int center3_get_slice_f(const uint8_t ct[24]);
+/* Populate s from a CenterCube ct[24] and edge permutation parity (0 or 1). */
+void center3_set(Center3State *s, const uint8_t ct[24], int eparity);
 
-/* Apply phase-3 move p3m (0..19) to a slice coordinate. */
-int center3_slice_move(int slice, int p3m);
+/* Encode s → combined coordinate [0, 29399]. */
+int center3_getct(const Center3State *s);
 
-/* -------------------------------------------------------------------------
- * Pruning
- *
- * The prun coord is computed from sliceU, sliceR, sliceF, and eparity.
- * The packing formula matches the Java implementation:
- *   packed = (sliceR/2)*35*12*2 + (sliceF/2)*12*2 + (sliceU/4)*2 + eparity
- * (integer divisions, so 70/2=35, 70/4 needs rounding — see center3.c).
- * ------------------------------------------------------------------------- */
-int center3_prun_coord(int sliceU, int sliceR, int sliceF, int eparity);
-int center3_prun_get(int coord);
-void center3_prun_set(int coord, int dist);
+/* Decode combined coordinate → s. */
+void center3_setct(Center3State *s, int idx);
 
-/* -------------------------------------------------------------------------
- * Initialisation
- * ------------------------------------------------------------------------- */
-void center3_create_slice_move_table(void);
+/* Apply Phase 3 move p3m (0..19) to s in place. */
+void center3_move(Center3State *s, int p3m);
+
+/* Table lookup: new ct_coord after applying move p3m. */
+int center3_ct_move(int ct_coord, int p3m);
+
+/* Pruning: lower bound on moves to reach ct_coord == 0. */
+int center3_prun_get(int ct_coord);
+
+/* Initialisation. */
+void center3_create_move_table(void);
 void center3_create_prun(void);
 void center3_init(void);
 
-/* -------------------------------------------------------------------------
- * Solved detection
- * ------------------------------------------------------------------------- */
-int center3_is_solved(int sliceU, int sliceR, int sliceF);
+/* Solved iff ct_coord == 0. */
+int center3_is_solved(int ct_coord);
 
 #endif /* CENTER3_H */

@@ -6,56 +6,130 @@
 /* -------------------------------------------------------------------------
  * Tables
  * ------------------------------------------------------------------------- */
-uint16_t rlmv  [CENTER2_RL_COORDS][CENTER2_PHASE2_MOVES];
+uint8_t  rlmv  [CENTER2_RL_COORDS][CENTER2_PHASE2_MOVES];
 uint16_t ctmv  [CENTER2_CT_COORDS][CENTER2_PHASE2_MOVES];
-uint8_t  ctprun[CENTER2_RL_COORDS][CENTER2_CT_COORDS];
+uint8_t  ctprun[CENTER2_PRUN_SIZE];   /* indexed: ct * CENTER2_RL_COORDS + rl */
 
 /* -------------------------------------------------------------------------
- * rl coordinate
- *
- * Which 4 of the 16 equatorial center slots contain R or L stickers.
- * Encoded as C(16,4) = 1820 via the combinatorial number system.
- * "Equatorial" = F(8-11) B(12-15) R(16-19) L(20-23) center slots.
- * R=1, L=4; any of the 16 slots holding those colors contributes.
+ * Center2State: populate, get/set coordinates
  * ------------------------------------------------------------------------- */
 
-int center2_get_rl(const uint8_t eq_center[16]) {
-    int rank = 0, chosen = 0;
-    for (int i = 15; i >= 0 && chosen < 4; i--) {
-        int color = eq_center[i];
-        if (color == 1 || color == 4) { /* R=1, L=4 */
-            rank += Cnk[i][4 - chosen];
-            chosen++;
+void center2_set(Center2State *s, const uint8_t cc_ct[24], int edge_parity) {
+    for (int i = 0; i < 16; i++)
+        s->ct[i] = cc_ct[i] % 3;
+    for (int i = 0; i < 8; i++)
+        s->rl[i] = cc_ct[i + 16];
+    s->parity = edge_parity;
+}
+
+int center2_getrl(const Center2State *s) {
+    int idx = 0, r = 4;
+    for (int i = 6; i >= 0; i--) {
+        if (s->rl[i] != s->rl[7])
+            idx += Cnk[i][r--];
+    }
+    return idx * 2 + s->parity;
+}
+
+void center2_setrl(Center2State *s, int idx) {
+    s->parity = idx & 1;
+    idx >>= 1;
+    int r = 4;
+    s->rl[7] = 0;
+    for (int i = 6; i >= 0; i--) {
+        if (idx >= Cnk[i][r]) {
+            idx -= Cnk[i][r--];
+            s->rl[i] = 1;
+        } else {
+            s->rl[i] = 0;
         }
     }
-    return rank;
+}
+
+int center2_getct(const Center2State *s) {
+    int idx = 0, r = 8;
+    for (int i = 14; i >= 0; i--) {
+        if (s->ct[i] != s->ct[15])
+            idx += Cnk[i][r--];
+    }
+    return idx;
+}
+
+void center2_setct(Center2State *s, int idx) {
+    int r = 8;
+    s->ct[15] = 0;
+    for (int i = 14; i >= 0; i--) {
+        if (idx >= Cnk[i][r]) {
+            idx -= Cnk[i][r--];
+            s->ct[i] = 1;
+        } else {
+            s->ct[i] = 0;
+        }
+    }
 }
 
 /* -------------------------------------------------------------------------
- * ct coordinate
+ * Move simulation (port of Java Center2.move)
  *
- * Given the rl mask, independently encode the positions of the 4 R stickers
- * (within the 8 R/L slots) and the 4 L stickers similarly.
- * Range: C(8,4) × C(8,4) = 70 × 70 … but the Java solver encodes both into
- * a single 6435-range value. We follow that encoding:
- *   ct = r_rank * 70 + l_rank, where each rank is C(8,4) = 70 options.
- *   NOTE: 6435 = C(16,4) which equals 70^2/something — the actual encoding
- *   used by the Java source is the combinatorial rank of 8 chosen from 16 for
- *   the R-color positions only, with the L positions determined by exclusion.
- *   This matches CENTER2_CT_COORDS = 6435 = C(16,4).
+ * pmv[m] = 1 for moves that toggle edge parity: rx1(21), rx3(23), lx1(30), lx3(32).
  * ------------------------------------------------------------------------- */
+static const int pmv[36] = {
+    0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0,  /* outer U R F D L B */
+    0,0,0,                                        /* Uw */
+    1,0,1,                                        /* Rw: rx1 toggles, rx2 no, rx3 toggles */
+    0,0,0,                                        /* Fw */
+    0,0,0,                                        /* Dw */
+    1,0,1,                                        /* Lw: lx1 toggles, lx2 no, lx3 toggles */
+    0,0,0                                         /* Bw */
+};
 
-int center2_get_ct(const uint8_t eq_center[16]) {
-    /* Rank of R-color positions among all 16 equatorial slots. */
-    int rank = 0, chosen = 0;
-    for (int i = 15; i >= 0 && chosen < 8; i--) {
-        if (eq_center[i] == 1) { /* R=1 */
-            rank += Cnk[i][8 - chosen];
-            chosen++;
-        }
+void center2_move(Center2State *s, int m) {
+    s->parity ^= pmv[m];
+    int key  = m % 3;
+    int axis = m / 3;
+    switch (axis) {
+    case 0:  /* U  */ swap4_int(s->ct, 0,1,2,3, key); break;
+    case 1:  /* R  */ swap4_int(s->rl, 0,1,2,3, key); break;
+    case 2:  /* F  */ swap4_int(s->ct, 8,9,10,11, key); break;
+    case 3:  /* D  */ swap4_int(s->ct, 4,5,6,7, key); break;
+    case 4:  /* L  */ swap4_int(s->rl, 4,5,6,7, key); break;
+    case 5:  /* B  */ swap4_int(s->ct, 12,13,14,15, key); break;
+    case 6:  /* Uw */
+        swap4_int(s->ct, 0,1,2,3, key);
+        swap4_int(s->rl, 0,5,4,1, key);
+        swap4_int(s->ct, 8,9,12,13, key);
+        break;
+    case 7:  /* Rw */
+        swap4_int(s->rl, 0,1,2,3, key);
+        swap4_int(s->ct, 1,15,5,9, key);
+        swap4_int(s->ct, 2,12,6,10, key);
+        break;
+    case 8:  /* Fw */
+        swap4_int(s->ct, 8,9,10,11, key);
+        swap4_int(s->rl, 0,3,6,5, key);
+        swap4_int(s->ct, 3,2,5,4, key);
+        break;
+    case 9:  /* Dw */
+        swap4_int(s->ct, 4,5,6,7, key);
+        swap4_int(s->rl, 3,2,7,6, key);
+        swap4_int(s->ct, 11,10,15,14, key);
+        break;
+    case 10: /* Lw */
+        swap4_int(s->rl, 4,5,6,7, key);
+        swap4_int(s->ct, 0,8,4,14, key);
+        swap4_int(s->ct, 3,11,7,13, key);
+        break;
+    case 11: /* Bw */
+        swap4_int(s->ct, 12,13,14,15, key);
+        swap4_int(s->rl, 1,4,7,2, key);
+        swap4_int(s->ct, 1,0,7,6, key);
+        break;
     }
-    return rank;
 }
+
+/* -------------------------------------------------------------------------
+ * Move table accessors
+ * ------------------------------------------------------------------------- */
 
 int center2_rl_move(int rl, int p2m) {
     return rlmv[rl][p2m];
@@ -65,28 +139,68 @@ int center2_ct_move(int ct, int p2m) {
     return ctmv[ct][p2m];
 }
 
+/* -------------------------------------------------------------------------
+ * Pruning
+ * ------------------------------------------------------------------------- */
+
 int center2_prun_get(int rl, int ct) {
-    return ctprun[rl][ct];
+    return ctprun[ct * CENTER2_RL_COORDS + rl];
 }
 
 void center2_prun_set(int rl, int ct, int dist) {
-    ctprun[rl][ct] = (uint8_t)dist;
+    ctprun[ct * CENTER2_RL_COORDS + rl] = (uint8_t)dist;
 }
 
+/* -------------------------------------------------------------------------
+ * Initialisation
+ * ------------------------------------------------------------------------- */
+
 void center2_create_rl_move_table(void) {
-    /* TODO: for each rl coord and each phase-2 move, compute new rl. */
-    memset(rlmv, 0, sizeof(rlmv));
+    Center2State s;
+    for (int i = 0; i < CENTER2_RL_COORDS; i++) {
+        for (int mi = 0; mi < CENTER2_PHASE2_MOVES; mi++) {
+            center2_setrl(&s, i);
+            center2_move(&s, move2std[mi]);
+            rlmv[i][mi] = (uint8_t)center2_getrl(&s);
+        }
+    }
 }
 
 void center2_create_ct_move_table(void) {
-    /* TODO: for each ct coord and each phase-2 move, compute new ct. */
-    memset(ctmv, 0, sizeof(ctmv));
+    Center2State s;
+    for (int i = 0; i < CENTER2_CT_COORDS; i++) {
+        for (int mi = 0; mi < CENTER2_PHASE2_MOVES; mi++) {
+            center2_setct(&s, i);
+            center2_move(&s, move2std[mi]);
+            ctmv[i][mi] = (uint16_t)center2_getct(&s);
+        }
+    }
 }
 
 void center2_create_prun(void) {
     memset(ctprun, 0xFF, sizeof(ctprun));
-    /* TODO: BFS from solved state (rl=0, ct=0 in canonical form).
-     * Use center2_rl_move and center2_ct_move in tandem. */
+
+    /* Seed the 6 solved states (ct=0, rl in {0,18,28,46,54,56}). */
+    static const int solved_rl[6] = {0, 18, 28, 46, 54, 56};
+    for (int i = 0; i < 6; i++)
+        ctprun[solved_rl[i]] = 0;   /* ct=0 → index = 0*70 + rl = rl */
+
+    /* Forward BFS using first 23 of the 28 phase-2 moves. */
+    int done = 6;
+    for (int depth = 0; done < CENTER2_PRUN_SIZE; depth++) {
+        for (int idx = 0; idx < CENTER2_PRUN_SIZE; idx++) {
+            if (ctprun[idx] != (uint8_t)depth) continue;
+            int ct = idx / CENTER2_RL_COORDS;
+            int rl = idx % CENTER2_RL_COORDS;
+            for (int m = 0; m < 23; m++) {
+                int nidx = (int)ctmv[ct][m] * CENTER2_RL_COORDS + rlmv[rl][m];
+                if (ctprun[nidx] == 0xFF) {
+                    ctprun[nidx] = (uint8_t)(depth + 1);
+                    done++;
+                }
+            }
+        }
+    }
 }
 
 void center2_init(void) {
@@ -96,6 +210,6 @@ void center2_init(void) {
 }
 
 int center2_is_solved(int rl, int ct) {
-    /* Solved when both sub-coords are 0 (canonical solved value). */
-    return (rl == 0 && ct == 0);
+    if (ct != 0) return 0;
+    return rl==0 || rl==18 || rl==28 || rl==46 || rl==54 || rl==56;
 }
