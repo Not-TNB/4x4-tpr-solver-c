@@ -122,25 +122,6 @@ const uint8_t centerFacelet[24] = {
     FSLOT(4,5), FSLOT(4,6), FSLOT(4,10), FSLOT(4,9),
 };
 
-/* Face colour by edge pair: [pair][0=A, 1=B]. */
-const int edge_color[12][2] = {
-    {0,2},{0,1},{0,5},{0,4},  /* UF UR UB UL */
-    {3,2},{3,1},{3,5},{3,4},  /* DF DR DB DL */
-    {2,1},{2,4},{5,1},{5,4},  /* FR FL BR BL */
-};
-
-/* Wing slot (0..23) -> 3×3 edge facelet for the reduced cube. */
-const int edge_map[24] = {
-    /* Primary edge facelet */
-    FSLOT(0,13), FSLOT(0,7), FSLOT(0,1), FSLOT(0,4),  /* UF UR UB UL */
-    FSLOT(3,1),  FSLOT(3,7), FSLOT(3,13),FSLOT(3,4),  /* DF DR DB DL */
-    FSLOT(2,7),  FSLOT(2,4), FSLOT(5,4), FSLOT(5,7),  /* FR FL BR BL */
-    /* Secondary edge facelet */
-    FSLOT(2,1),  FSLOT(1,4), FSLOT(5,1), FSLOT(4,1),  /* UF UR UB UL */
-    FSLOT(2,13), FSLOT(1,13),FSLOT(5,13),FSLOT(4,13), /* DF DR DB DL */
-    FSLOT(1,7),  FSLOT(4,7), FSLOT(1,4), FSLOT(4,4),  /* FR FL BR BL */
-};
-
 /* -------------------------------------------------------------------------
  * CenterCube
  * ------------------------------------------------------------------------- */
@@ -148,10 +129,6 @@ const int edge_map[24] = {
 void center_cube_identity(CenterCube *c) {
     for (int i = 0; i < 24; i++)
         c->ct[i] = (uint8_t)(centerFacelet[i] / 16);
-}
-
-void center_cube_copy(CenterCube *dst, const CenterCube *src) {
-    memcpy(dst->ct, src->ct, 24);
 }
 
 static const uint8_t ct_cycles[12][3][4] = {
@@ -178,21 +155,12 @@ void center_cube_move(CenterCube *c, int m) {
     }
 }
 
-void center_cube_fill_333_facelet(const CenterCube *c, const char *facelet54) {
-    /* TODO: set facelet54[face*9+4] from c->ct. */
-    (void)c; (void)facelet54;
-}
-
 /* -------------------------------------------------------------------------
  * EdgeCube
  * ------------------------------------------------------------------------- */
 
 void edge_cube_identity(EdgeCube *e) {
     for (int i = 0; i < 24; i++) e->ep[i] = (uint8_t)i;
-}
-
-void edge_cube_copy(EdgeCube *dst, const EdgeCube *src) {
-    memcpy(dst->ep, src->ep, 24);
 }
 
 static const uint8_t ep_cycles[12][3][4] = {
@@ -236,11 +204,6 @@ int edge_cube_parity(const EdgeCube *e) {
     return parity_u8(perm, 12);
 }
 
-void edge_cube_fill_333_facelet(const EdgeCube *e, const char *facelet54) {
-    /* TODO: write edge stickers into facelet54 via edge_map. */
-    (void)e; (void)facelet54;
-}
-
 /* -------------------------------------------------------------------------
  * CornerCube
  * ------------------------------------------------------------------------- */
@@ -271,11 +234,6 @@ void corner_cube_move(CornerCube *c, int m) {
 
 int corner_cube_parity(const CornerCube *c) {
     return parity_u8(c->cp, 8);
-}
-
-void corner_cube_fill_333_facelet(const CornerCube *c, const char *facelet54) {
-    /* TODO: write corner stickers into facelet54. */
-    (void)c; (void)facelet54;
 }
 
 static void set_twist(uint8_t *co, int idx) {
@@ -441,21 +399,7 @@ void fullcube_from_facelet(FullCube *c, const char *facelet96) {
     }
 }
 
-void fullcube_to_333_facelet(FullCube *c, char *out54) {
-    CenterCube *ct = fullcube_get_center(c);
-    EdgeCube   *e  = fullcube_get_edge(c);
-    CornerCube *co = fullcube_get_corner(c);
-
-    memset(out54, '?', 54);
-    out54[54] = '\0';
-
-    center_cube_fill_333_facelet(ct, out54);
-    edge_cube_fill_333_facelet(e, out54);
-    corner_cube_fill_333_facelet(co, out54);
-}
-
 void fullcube_from_moves(FullCube *c, const int *moves, int n) {
     fullcube_identity(c);
     for (int i = 0; i < n; i++) fullcube_do_move(c, moves[i]);
 }
-

@@ -20,7 +20,7 @@
  *          (0=UD-axis, 1=RL-axis, 2=FB-axis), then C(15,8) ranks those among
  *          0–14 that differ from slot 15.
  *
- * Tables (from Java Center2.java):
+ * Tables:
  *   rlmv [70][28]       — rl coordinate after each phase-2 move
  *   ctmv [6435][28]     — ct coordinate after each phase-2 move
  *   ctprun[6435 * 70]   — flat pruning table, indexed ct * 70 + rl
@@ -70,18 +70,6 @@ void center2_setct(Center2State *s, int idx);
 
 /* Apply standard move m (0..35) to a Center2State (simulation kernel). */
 void center2_move(Center2State *s, int m);
-
-/* -------------------------------------------------------------------------
- * Move table accessors
- * ------------------------------------------------------------------------- */
-int center2_rl_move(int rl, int p2m);
-int center2_ct_move(int ct, int p2m);
-
-/* -------------------------------------------------------------------------
- * Pruning  (indexed ct * CENTER2_RL_COORDS + rl)
- * ------------------------------------------------------------------------- */
-int  center2_prun_get(int rl, int ct);
-void center2_prun_set(int rl, int ct, int dist);
 
 /* -------------------------------------------------------------------------
  * Initialisation

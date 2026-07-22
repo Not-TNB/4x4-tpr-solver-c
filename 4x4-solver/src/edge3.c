@@ -9,7 +9,7 @@ int      e3sym2raw [EDGE3_SYM_CLASSES];
 uint16_t e3symstate[EDGE3_SYM_CLASSES];
 int      e3raw2sym [EDGE3_CORD1_MAX];
 
-int      eprun[EDGE3_N_EPRUN / 16];
+uint8_t  eprun[EDGE3_N_EPRUN];
 
 int      e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 int      e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
@@ -20,10 +20,8 @@ static const int factX[13] = {
 };
 
 /* -------------------------------------------------------------------------
- * Step 2 -- edge3_set_from_int
- *
  * Decode raw combined index (cord1 * N_RAW + cord2) into s->edge[12].
- * Uses the packed-nibble half-factorial Lehmer decode from Java Edge3.set(int).
+ * Uses the packed-nibble half-factorial Lehmer decode.
  * Sets edgeo[i] = i (std state).
  * ------------------------------------------------------------------------- */
 void edge3_set_from_int(Edge3State *s, int idx) {
@@ -49,11 +47,8 @@ void edge3_set_from_int(Edge3State *s, int idx) {
 }
 
 /* -------------------------------------------------------------------------
- * Step 3 -- edge3_std
- *
  * Normalise via edgeo[]: build inverse of edgeo[] into s->temp[],
  * remap edge[i] = temp[edge[i]], reset edgeo[i] = i.
- * Matches Java Edge3.std().
  * ------------------------------------------------------------------------- */
 void edge3_std(Edge3State *s) {
     for (int i = 0; i < 12; i++)
@@ -65,12 +60,10 @@ void edge3_std(Edge3State *s) {
 }
 
 /* -------------------------------------------------------------------------
- * Step 4 -- edge3_get
- *
  * Lehmer rank of first `end` elements of s->edge[].
  * Caller must have called std() first.
- * end=4  → cord1 ∈ [0, 11879]
- * end=10 → combined index; %20160 gives cord2
+ * end=4  -> cord1 in [0, 11879]
+ * end=10 -> combined index; %20160 gives cord2
  * ------------------------------------------------------------------------- */
 int edge3_get(const Edge3State *s, int end) {
     long long val = 0xba9876543210LL;
@@ -84,111 +77,104 @@ int edge3_get(const Edge3State *s, int end) {
 }
 
 /* -------------------------------------------------------------------------
- * Step 5 -- edge3_move
- *
  * 20-case switch applying circle/swap to both edge[] and edgeo[].
- * circle(a,b,c,d): d←c←b←a←d  (CW)
+ * circle(a,b,c,d): d<-c<-b<-a<-d  (CW)
  * swap4(a,b,c,d):  a↔c, b↔d
  * swap2(x,y):      x↔y
- * Matches Java Edge3.move(int).
  * ------------------------------------------------------------------------- */
 
-static inline void e3_circle(int *a, int p, int q, int r, int s) {
+static void e3_circle(int *a, int p, int q, int r, int s) {
     int t = a[s]; a[s] = a[r]; a[r] = a[q]; a[q] = a[p]; a[p] = t;
 }
-static inline void e3_swap4(int *a, int p, int q, int r, int s) {
-    int t; t = a[p]; a[p] = a[r]; a[r] = t;
-          t = a[q]; a[q] = a[s]; a[s] = t;
+static void e3_swap4(int *a, int p, int q, int r, int s) {
+    int t; t = a[p]; a[p] = a[r]; a[r] = t; t = a[q]; a[q] = a[s]; a[s] = t;
 }
-static inline void e3_swap2(int *a, int x, int y) {
+static void e3_swap2(int *a, int x, int y) {
     int t = a[x]; a[x] = a[y]; a[y] = t;
 }
 
 void edge3_move(Edge3State *s, int p3m) {
     int *e = s->edge, *o = s->edgeo;
     switch (p3m) {
-    case 0:  e3_circle(e,0,4,1,5); e3_circle(o,0,4,1,5); break; /* U  */
-    case 1:  e3_swap4 (e,0,4,1,5); e3_swap4 (o,0,4,1,5); break; /* U2 */
-    case 2:  e3_circle(e,0,5,1,4); e3_circle(o,0,5,1,4); break; /* U' */
-    case 3:  e3_swap4 (e,5,10,6,11); e3_swap4(o,5,10,6,11); break; /* R2 */
-    case 4:  e3_circle(e,0,11,3,8); e3_circle(o,0,11,3,8); break; /* F  */
-    case 5:  e3_swap4 (e,0,11,3,8); e3_swap4 (o,0,11,3,8); break; /* F2 */
-    case 6:  e3_circle(e,0,8,3,11); e3_circle(o,0,8,3,11); break; /* F' */
-    case 7:  e3_circle(e,2,7,3,6);  e3_circle(o,2,7,3,6);  break; /* D  */
-    case 8:  e3_swap4 (e,2,7,3,6);  e3_swap4 (o,2,7,3,6);  break; /* D2 */
-    case 9:  e3_circle(e,2,6,3,7);  e3_circle(o,2,6,3,7);  break; /* D' */
-    case 10: e3_swap4 (e,4,8,7,9);  e3_swap4 (o,4,8,7,9);  break; /* L2 */
-    case 11: e3_circle(e,1,9,2,10); e3_circle(o,1,9,2,10); break; /* B  */
-    case 12: e3_swap4 (e,1,9,2,10); e3_swap4 (o,1,9,2,10); break; /* B2 */
-    case 13: e3_circle(e,1,10,2,9); e3_circle(o,1,10,2,9); break; /* B' */
-    case 14: /* u2 */
-        e3_swap4(e,0,4,1,5);  e3_swap4(o,0,4,1,5);
-        e3_swap2(e,9,11);     e3_swap2(o,8,10);
-        break;
-    case 15: /* r2 */
-        e3_swap4(e,5,10,6,11); e3_swap4(o,5,10,6,11);
-        e3_swap2(e,1,3);       e3_swap2(o,0,2);
-        break;
-    case 16: /* f2 */
-        e3_swap4(e,0,11,3,8); e3_swap4(o,0,11,3,8);
-        e3_swap2(e,5,7);      e3_swap2(o,4,6);
-        break;
-    case 17: /* d2 */
-        e3_swap4(e,2,7,3,6); e3_swap4(o,2,7,3,6);
-        e3_swap2(e,8,10);    e3_swap2(o,9,11);
-        break;
-    case 18: /* l2 */
-        e3_swap4(e,4,8,7,9); e3_swap4(o,4,8,7,9);
-        e3_swap2(e,0,2);     e3_swap2(o,1,3);
-        break;
-    case 19: /* b2 */
-        e3_swap4(e,1,9,2,10); e3_swap4(o,1,9,2,10);
-        e3_swap2(e,4,6);      e3_swap2(o,5,7);
-        break;
+        case 0:  e3_circle(e,0,4,1,5);   e3_circle(o,0,4,1,5);  break; // U
+        case 1:  e3_swap4 (e,0,4,1,5);   e3_swap4 (o,0,4,1,5);  break; // U2
+        case 2:  e3_circle(e,0,5,1,4);   e3_circle(o,0,5,1,4);  break; // U'
+        case 3:  e3_swap4 (e,5,10,6,11); e3_swap4(o,5,10,6,11); break; // R2
+        case 4:  e3_circle(e,0,11,3,8);  e3_circle(o,0,11,3,8); break; // F
+        case 5:  e3_swap4 (e,0,11,3,8);  e3_swap4 (o,0,11,3,8); break; // F2
+        case 6:  e3_circle(e,0,8,3,11);  e3_circle(o,0,8,3,11); break; // F'
+        case 7:  e3_circle(e,2,7,3,6);   e3_circle(o,2,7,3,6);  break; // D
+        case 8:  e3_swap4 (e,2,7,3,6);   e3_swap4 (o,2,7,3,6);  break; // D2
+        case 9:  e3_circle(e,2,6,3,7);   e3_circle(o,2,6,3,7);  break; // D'
+        case 10: e3_swap4 (e,4,8,7,9);   e3_swap4 (o,4,8,7,9);  break; // L2
+        case 11: e3_circle(e,1,9,2,10);  e3_circle(o,1,9,2,10); break; // B
+        case 12: e3_swap4 (e,1,9,2,10);  e3_swap4 (o,1,9,2,10); break; // B2
+        case 13: e3_circle(e,1,10,2,9);  e3_circle(o,1,10,2,9); break; // B'
+        case 14: // Uw2
+            e3_swap4(e,0,4,1,5); e3_swap4(o,0,4,1,5);
+            e3_swap2(e,9,11);        e3_swap2(o,8,10);
+            break;
+        case 15: // Rw2
+            e3_swap4(e,5,10,6,11); e3_swap4(o,5,10,6,11);
+            e3_swap2(e,1,3);           e3_swap2(o,0,2);
+            break;
+        case 16: // Fw2
+            e3_swap4(e,0,11,3,8); e3_swap4(o,0,11,3,8);
+            e3_swap2(e,5,7);          e3_swap2(o,4,6);
+            break;
+        case 17: // Dw2
+            e3_swap4(e,2,7,3,6); e3_swap4(o,2,7,3,6);
+            e3_swap2(e,8,10);        e3_swap2(o,9,11);
+            break;
+        case 18: // Lw2
+            e3_swap4(e,4,8,7,9); e3_swap4(o,4,8,7,9);
+            e3_swap2(e,0,2);         e3_swap2(o,1,3);
+            break;
+        case 19: // Bw2
+            e3_swap4(e,1,9,2,10); e3_swap4(o,1,9,2,10);
+            e3_swap2(e,4,6);          e3_swap2(o,5,7);
+            break;
     }
 }
 
 /* -------------------------------------------------------------------------
- * Step 6 -- edge3_rot / edge3_rotate
- *
  * rot(0) = move(14); move(17)
  * rot(1) and rot(2) use cross-array circlex/swapx ops.
  * rotate(r): decompose r into pairs of rot(1)+rot(2) then optional rot(0).
- * Matches Java Edge3.rot() / Edge3.rotate().
  * ------------------------------------------------------------------------- */
 
 /* swapx(x,y): swap edge[x] with edgeo[y]. */
-static inline void e3_swapx(int *edge, int *edgeo, int x, int y) {
+static void e3_swapx(int *edge, int *edgeo, int x, int y) {
     int t = edge[x]; edge[x] = edgeo[y]; edgeo[y] = t;
 }
-/* circlex(a,b,c,d): edgeo[d]←edge[c]←edgeo[b]←edge[a]←edgeo[d]. */
-static inline void e3_circlex(int *edge, int *edgeo, int a, int b, int c, int d) {
+/* circlex(a,b,c,d): edgeo[d]<-edge[c]<-edgeo[b]<-edge[a]<-edgeo[d]. */
+static void e3_circlex(int *edge, int *edgeo, int a, int b, int c, int d) {
     int t = edgeo[d]; edgeo[d] = edge[c]; edge[c] = edgeo[b]; edgeo[b] = edge[a]; edge[a] = t;
 }
 
 void edge3_rot(Edge3State *s, int r) {
     int *e = s->edge, *o = s->edgeo;
     switch (r) {
-    case 0:
-        edge3_move(s, 14);
-        edge3_move(s, 17);
-        break;
-    case 1:
-        e3_circlex(e,o,11,5,10,6);
-        e3_circlex(e,o, 5,10, 6,11);
-        e3_circlex(e,o, 1, 2, 3, 0);
-        e3_circlex(e,o, 4, 9, 7, 8);
-        e3_circlex(e,o, 8, 4, 9, 7);
-        e3_circlex(e,o, 0, 1, 2, 3);
-        break;
-    case 2:
-        e3_swapx(e,o,4,5);  e3_swapx(e,o,5,4);
-        e3_swapx(e,o,11,8); e3_swapx(e,o,8,11);
-        e3_swapx(e,o,7,6);  e3_swapx(e,o,6,7);
-        e3_swapx(e,o,9,10); e3_swapx(e,o,10,9);
-        e3_swapx(e,o,1,1);  e3_swapx(e,o,0,0);
-        e3_swapx(e,o,3,3);  e3_swapx(e,o,2,2);
-        break;
+        case 0:
+            edge3_move(s, 14);
+            edge3_move(s, 17);
+            break;
+        case 1:
+            e3_circlex(e,o,11,5,10,6);
+            e3_circlex(e,o, 5,10, 6,11);
+            e3_circlex(e,o, 1, 2, 3, 0);
+            e3_circlex(e,o, 4, 9, 7, 8);
+            e3_circlex(e,o, 8, 4, 9, 7);
+            e3_circlex(e,o, 0, 1, 2, 3);
+            break;
+        case 2:
+            e3_swapx(e,o,4,5);  e3_swapx(e,o,5,4);
+            e3_swapx(e,o,11,8); e3_swapx(e,o,8,11);
+            e3_swapx(e,o,7,6);  e3_swapx(e,o,6,7);
+            e3_swapx(e,o,9,10); e3_swapx(e,o,10,9);
+            e3_swapx(e,o,1,1);  e3_swapx(e,o,0,0);
+            e3_swapx(e,o,3,3);  e3_swapx(e,o,2,2);
+            break;
     }
 }
 
@@ -198,17 +184,10 @@ void edge3_rotate(Edge3State *s, int r) {
         edge3_rot(s, 1);
         edge3_rot(s, 2);
     }
-    if (r != 0)
-        edge3_rot(s, 0);
+    if (r != 0) edge3_rot(s, 0);
 }
 
-/* -------------------------------------------------------------------------
- * Step 7 -- edge3_set_from_edgecube
- *
- * Convert an EdgeCube ep[24] to Edge3State.
- * FullEdgeMap = {0,2,4,6,1,3,7,5,8,9,10,11}.
- * Matches Java Edge3.set(EdgeCube).
- * ------------------------------------------------------------------------- */
+/* Convert an EdgeCube ep[24] to Edge3State */
 static const int FullEdgeMap[12] = {0, 2, 4, 6, 1, 3, 7, 5, 8, 9, 10, 11};
 
 int edge3_set_from_edgecube(Edge3State *s, const uint8_t ep[24]) {
@@ -219,25 +198,21 @@ int edge3_set_from_edgecube(Edge3State *s, const uint8_t ep[24]) {
     int parity = 1;  /* FullEdgeMap introduces one transposition */
     for (int i = 0; i < 12; i++) {
         while (s->edge[i] != i) {
-            int t         = s->edge[i];
-            s->edge[i]    = s->edge[t];
-            s->edge[t]    = t;
-            int tmp       = s->temp[i];
-            s->temp[i]    = s->temp[t];
-            s->temp[t]    = tmp;
-            parity       ^= 1;
+            int t       = s->edge[i];
+            s->edge[i]  = s->edge[t];
+            s->edge[t]  = t;
+            int tmp     = s->temp[i];
+            s->temp[i]  = s->temp[t];
+            s->temp[t]  = tmp;
+            parity     ^= 1;
         }
     }
-    for (int i = 0; i < 12; i++)
-        s->edge[i] = s->temp[ep[FullEdgeMap[i]] % 12];
-    for (int i = 0; i < 12; i++)
-        s->edgeo[i] = i;
+    for (int i = 0; i < 12; i++) s->edge[i] = s->temp[ep[FullEdgeMap[i]] % 12];
+    for (int i = 0; i < 12; i++) s->edgeo[i] = i;
     return parity;
 }
 
 /* -------------------------------------------------------------------------
- * Step 8 -- edge3_init_mvrot
- *
  * For each of the 20 p3 moves × 8 rotations, simulate from identity,
  * record where each position maps (mvrot) and the value-relabelling
  * inverse permutation (mvroto) after std().
@@ -249,24 +224,20 @@ void edge3_init_mvrot(void) {
             edge3_set_from_int(&s, 0);
             edge3_move(&s, m);
             edge3_rotate(&s, r);
-            int idx = m * EDGE3_SYM_COUNT + r;
-            for (int i = 0; i < 12; i++)
-                e3mvrot[idx][i] = s.edge[i];
+            const int idx = m * EDGE3_SYM_COUNT + r;
+            for (int i = 0; i < 12; i++) e3mvrot[idx][i] = s.edge[i];
             edge3_std(&s);
-            for (int i = 0; i < 12; i++)
-                e3mvroto[idx][i] = s.temp[i];
+            for (int i = 0; i < 12; i++) e3mvroto[idx][i] = s.temp[i];
         }
     }
 }
 
 /* -------------------------------------------------------------------------
- * Step 9 -- edge3_getmvrot  (hot path)
- *
  * Compute Lehmer rank of ep[] after applying combined move+rotation mrIdx,
  * without modifying ep[]. Uses precomputed mvrot/mvroto tables.
  * mrIdx = move * EDGE3_SYM_COUNT + rotation.
- * end=4  → cord1 (P(12,4) range)
- * end=10 → combined rank; caller takes %N_RAW for cord2
+ * end=4  -> cord1 (P(12,4) range)
+ * end=10 -> combined rank; caller takes %N_RAW for cord2
  * ------------------------------------------------------------------------- */
 int edge3_getmvrot(const int *ep, int mrIdx, int end) {
     long long val = 0xba9876543210LL;
@@ -282,29 +253,18 @@ int edge3_getmvrot(const int *ep, int mrIdx, int end) {
 /* -------------------------------------------------------------------------
  * Pruning
  * ------------------------------------------------------------------------- */
-int edge3_get_pruning(int idx) {
-    return (eprun[idx >> 4] >> ((idx & 0xf) << 1)) & 3;
-}
-
-void edge3_set_pruning(int idx, int val) {
-    eprun[idx >> 4] ^= (3 ^ val) << ((idx & 0xf) << 1);
-}
-
-int edge3_getprun(int edge_coord, int prun) {
-    int depm3 = edge3_get_pruning(edge_coord);
-    if (depm3 == 3) return 10; /* MAX_DEPTH */
-    return (depm3 - prun + 16) % 3 + prun - 1;
+int edge3_getprun(int edge_coord) {
+    int v = eprun[edge_coord];
+    return v == 255 ? 10 : v;
 }
 
 /* -------------------------------------------------------------------------
- * Initialisation -- table stubs (steps 8-11)
+ * Initialisation
  * ------------------------------------------------------------------------- */
+
 /* -------------------------------------------------------------------------
- * Step 10 -- edge3_init_sym2raw
- *
  * Enumerate all 11,880 cord1 values with 8 symmetry elements.
  * Builds e3sym2raw[1538], e3raw2sym[11880], e3symstate[1538].
- * Matches Java Edge3.initRaw2Sym().
  * Rotation sequence: rot(0) after each j; additionally rot(1)+rot(2) on odd j.
  * syminv = {0,1,6,3,4,5,2,7}.
  * ------------------------------------------------------------------------- */
@@ -340,74 +300,89 @@ void edge3_init_sym2raw(void) {
 }
 
 /* -------------------------------------------------------------------------
- * Step 11 -- edge3_create_prun
+ * Forward BFS over the N_EPRUN = 1538*20160 = 31,006,080 sym×cord2 state space
  *
- * Forward BFS over the N_EPRUN = 1538*20160 = 31,006,080 sym×cord2 state
- * space. Iterations 0–8 fill states at depths 1–9 (depth-0 = state 0 seeded
- * at init). At iteration 9 the Java breaks, leaving depth-10+ states as value
- * 3 (=MAX_DEPTH=10). The IDA* still works because 10 is a valid lower bound.
- *
- * 2-bit mod-3 encoding: 16 entries per int. Value 3 = unseen.
  * Symstate propagation: after setting idx, expand sym-equivalent cord2 values
  * within the same sym-class without additional move applications.
- * Matches Java Edge3.createPrun().
  * ------------------------------------------------------------------------- */
 void edge3_create_prun(void) {
-    memset(eprun, -1, sizeof(eprun));  /* all entries = 3 = unseen */
-    edge3_set_pruning(0, 0);
+    memset(eprun, 0xFF, sizeof(eprun));  /* 0xFF = unseen */
+    eprun[0] = 0;
 
     Edge3State e3, f3, g3;
 
+    /* Forward */
     for (int depth = 0; depth < 9; depth++) {
-        int depm3  = depth % 3;
-        int dep1m3 = (depth + 1) % 3;
+        for (int i = 0; i < EDGE3_N_EPRUN; i++) {
+            if (eprun[i] != (uint8_t)depth) continue;
 
-        for (int i_ = 0; i_ < EDGE3_N_EPRUN; i_ += 16) {
-            int blk = eprun[i_ >> 4];
-            if (blk == -1) continue;   /* all 16 entries unseen, skip */
+            int symcord1 = i / EDGE3_RAW_PERMS;
+            int cord1    = e3sym2raw[symcord1];
+            int cord2    = i % EDGE3_RAW_PERMS;
+            edge3_set_from_int(&e3, cord1 * EDGE3_RAW_PERMS + cord2);
 
-            for (int i = i_, v = blk; i < i_ + 16; i++, v >>= 2) {
-                if ((v & 3) != depm3) continue;
+            for (int m = 0; m < 17; m++) {
+                int cord1x    = edge3_getmvrot(e3.edge, m << 3, 4);
+                int sym_raw   = e3raw2sym[cord1x];
+                int symx      = sym_raw & 7;
+                int symcord1x = sym_raw >> 3;
+                int cord2x    = edge3_getmvrot(e3.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
+                int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
 
-                int symcord1 = i / EDGE3_RAW_PERMS;
-                int cord1    = e3sym2raw[symcord1];
-                int cord2    = i % EDGE3_RAW_PERMS;
-                edge3_set_from_int(&e3, cord1 * EDGE3_RAW_PERMS + cord2);
+                if (eprun[idx] != 0xFF) continue;
 
-                for (int m = 0; m < 17; m++) {
-                    int cord1x    = edge3_getmvrot(e3.edge, m << 3, 4);
-                    int sym_raw   = e3raw2sym[cord1x];
-                    int symx      = sym_raw & 7;
-                    int symcord1x = sym_raw >> 3;
-                    int cord2x    = edge3_getmvrot(e3.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
-                    int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
+                eprun[idx] = (uint8_t)(depth + 1);
 
-                    if (edge3_get_pruning(idx) != 3) continue;
+                uint16_t ss = e3symstate[symcord1x];
+                if (ss == 1) continue;
 
-                    edge3_set_pruning(idx, dep1m3);
+                memcpy(&f3, &e3, sizeof(Edge3State));
+                edge3_move(&f3, m);
+                edge3_rotate(&f3, symx);
 
-                    uint16_t ss = e3symstate[symcord1x];
-                    if (ss == 1) continue;
-
-                    /* Propagate to sym-equivalent cord2 values in same class */
-                    memcpy(&f3, &e3, sizeof(Edge3State));
-                    edge3_move(&f3, m);
-                    edge3_rotate(&f3, symx);
-
-                    for (int j = 1; (ss >>= 1) != 0; j++) {
-                        if (!(ss & 1)) continue;
-                        memcpy(&g3, &f3, sizeof(Edge3State));
-                        edge3_rotate(&g3, j);
-                        edge3_std(&g3);
-                        int idxx = symcord1x * EDGE3_RAW_PERMS
-                                   + edge3_get(&g3, 10) % EDGE3_RAW_PERMS;
-                        if (edge3_get_pruning(idxx) == 3)
-                            edge3_set_pruning(idxx, dep1m3);
-                    }
+                for (int j = 1; (ss >>= 1) != 0; j++) {
+                    if (!(ss & 1)) continue;
+                    memcpy(&g3, &f3, sizeof(Edge3State));
+                    edge3_rotate(&g3, j);
+                    edge3_std(&g3);
+                    int idxx = symcord1x * EDGE3_RAW_PERMS
+                               + edge3_get(&g3, 10) % EDGE3_RAW_PERMS;
+                    if (eprun[idxx] == 0xFF)
+                        eprun[idxx] = (uint8_t)(depth + 1);
                 }
             }
         }
     }
+
+    /* Backward */
+    int changed;
+    do {
+        changed = 0;
+        for (int i = 0; i < EDGE3_N_EPRUN; i++) {
+            if (eprun[i] != 0xFF) continue;
+
+            int symcord1 = i / EDGE3_RAW_PERMS;
+            int cord1    = e3sym2raw[symcord1];
+            int cord2    = i % EDGE3_RAW_PERMS;
+            edge3_set_from_int(&e3, cord1 * EDGE3_RAW_PERMS + cord2);
+
+            for (int m = 0; m < 17; m++) {
+                int cord1x    = edge3_getmvrot(e3.edge, m << 3, 4);
+                int sym_raw   = e3raw2sym[cord1x];
+                int symx      = sym_raw & 7;
+                int symcord1x = sym_raw >> 3;
+                int cord2x    = edge3_getmvrot(e3.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
+                int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
+
+                int nval = (int)eprun[idx];
+                if (nval == 0xFF) continue;
+
+                eprun[i] = (uint8_t)(nval + 1);
+                changed = 1;
+                break;
+            }
+        }
+    } while (changed);
 }
 
 void edge3_init(void) {
@@ -416,7 +391,3 @@ void edge3_init(void) {
     edge3_create_prun();
 }
 
-/* -------------------------------------------------------------------------
- * Solved detection
- * ------------------------------------------------------------------------- */
-int edge3_is_solved(int edge_coord) { return edge_coord == 0; }

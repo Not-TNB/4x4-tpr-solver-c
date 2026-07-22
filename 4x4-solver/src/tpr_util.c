@@ -6,8 +6,7 @@ int fact[13] = {
     1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600
 };
 
-void tpr_util_init(void) {
-    /* Pascal's triangle */
+void build_pascal_triangle(void) {
     for (int n = 0; n < 25; n++) {
         Cnk[n][0] = 1;
         for (int k = 1; k <= n; k++)
@@ -15,16 +14,12 @@ void tpr_util_init(void) {
         for (int k = n+1; k < 25; k++)
             Cnk[n][k] = 0;
     }
-    // /* Factorials */
-    // fact[0] = 1;
-    // for (int i = 1; i < 13; i++)
-    //     fact[i] = fact[i-1] * i;
 }
 
 void swap4_int(int *arr, int a, int b, int c, int d, int key) {
     int tmp;
     switch (key) {
-        case 0: tmp=arr[d]; arr[d]=arr[c]; arr[c]=arr[b]; arr[b]=arr[a]; arr[a]=tmp; break; /* CW:  a←d←c←b←a */
+        case 0: tmp=arr[d]; arr[d]=arr[c]; arr[c]=arr[b]; arr[b]=arr[a]; arr[a]=tmp; break; /* CW:  a<-d<-c<-b<-a */
         case 1: tmp=arr[a]; arr[a]=arr[c]; arr[c]=tmp;
                 tmp=arr[b]; arr[b]=arr[d]; arr[d]=tmp; break;
         case 2: tmp=arr[a]; arr[a]=arr[b]; arr[b]=arr[c]; arr[c]=arr[d]; arr[d]=tmp; break; /* CCW: a->b->c->d->a */
@@ -41,34 +36,7 @@ void swap4_u8(uint8_t *arr, int a, int b, int c, int d, int key) {
     }
 }
 
-void swap2_int(int *arr, int x, int y) {
-    int tmp = arr[x]; arr[x] = arr[y]; arr[y] = tmp;
-}
-
-void swap2_u8(uint8_t *arr, int x, int y) {
-    uint8_t tmp = arr[x]; arr[x] = arr[y]; arr[y] = tmp;
-}
-
 int parity_u8(const uint8_t *arr, int len) {
-    int visited[len];
-    memset(visited, 0, sizeof(int) * (size_t)len);
-    int parity = 0;
-    for (int i = 0; i < len; i++) {
-        if (!visited[i]) {
-            int j = i;
-            int cycle = 0;
-            while (!visited[j]) {
-                visited[j] = 1;
-                j = arr[j];
-                cycle++;
-            }
-            if ((cycle & 1) == 0) parity ^= 1;
-        }
-    }
-    return parity;
-}
-
-int parity_int(const int *arr, int len) {
     int visited[len];
     memset(visited, 0, sizeof(int) * (size_t)len);
     int parity = 0;

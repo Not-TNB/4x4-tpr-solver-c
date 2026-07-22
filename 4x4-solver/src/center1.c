@@ -45,8 +45,8 @@ static void ct1_move(uint8_t ct[24], int m) {
 /* 4 primitive cube rotations */
 static void ct1_rot(uint8_t ct[24], int r) {
     switch (r) {
-    case 0: ct1_move(ct, ux2); ct1_move(ct, dx2); break;
-    case 1: ct1_move(ct, rx1); ct1_move(ct, lx3); break;
+    case 0: ct1_move(ct, Uwx2); ct1_move(ct, Dwx2); break;
+    case 1: ct1_move(ct, Rwx1); ct1_move(ct, Lwx3); break;
     case 2:
         swap4_u8(ct,  0,  3,  1,  2, 1);
         swap4_u8(ct,  8, 11,  9, 10, 1);
@@ -55,7 +55,7 @@ static void ct1_rot(uint8_t ct[24], int r) {
         swap4_u8(ct, 16, 19, 21, 22, 1);
         swap4_u8(ct, 17, 18, 20, 23, 1);
         break;
-    case 3: ct1_move(ct, ux1); ct1_move(ct, dx3); ct1_move(ct, fx1); ct1_move(ct, bx3); break;
+    case 3: ct1_move(ct, Uwx1); ct1_move(ct, Dwx3); ct1_move(ct, Fwx1); ct1_move(ct, Bwx3); break;
     }
 }
 
@@ -103,48 +103,18 @@ int center1_get(const uint8_t ct[24]) {
     return rank;
 }
 
-int center1_move_raw(int raw, int m) {
-    uint8_t ct[24];
-    ct1_set(ct, raw);
-    ct1_move(ct, m);
-    return ct1_get(ct);
-}
-
-int center1_move_sym(int sym_class, int m) {
-    return ctsmv[sym_class][m] >> 6;
-}
-
-int center1_getsym(int raw) {
-    return raw2sym[raw] & 0x3F;
-}
-
-int center1_rotate(int raw, int s) {
-    uint8_t ct[24];
-    ct1_set(ct, raw);
-    ct1_rotate(ct, s);
-    return ct1_get(ct);
-}
-
-int center1_prun_get(int sym_class) {
-    return csprun[sym_class];
-}
-
-void center1_prun_set(int sym_class, int dist) {
-    csprun[sym_class] = (uint8_t)dist;
-}
-
 /* -------------------------------------------------------------------------
- * Step 4a -- Symmetry group tables (48-element, 4 primitive rotations):
- *   symmult[i][j]=k  : sym[k] = sym[i] ∘ sym[j]
+ * Symmetry group tables (48-element, 4 primitive rotations):
+ *   symmult[i][j]=k   : sym[k] = sym[i] . sym[j]
  *   syminv[i]=j       : sym[j] = sym[i]^{-1}
- *   symmove[i][j]=k   : sym[i] ∘ move_j ∘ sym[syminv[i]] = move_k
+ *   symmove[i][j]=k   : sym[i] . move_j . sym[syminv[i]] = move_k
  *   finish[i]         : raw coord of solved state under sym[i]
  * ------------------------------------------------------------------------- */
 void center1_init_sym(void) {
     uint8_t c[24], d[24], e[24], f[24];
     for (int i = 0; i < 24; i++) c[i] = d[i] = e[i] = f[i] = (uint8_t)i;
 
-    /* d steps through all 48 elems; c tracks sym[i]∘sym[j] */
+    /* d steps through all 48 elems; c tracks sym[i].sym[j] */
     for (int i = 0; i < 48; i++) {
         for (int j = 0; j < 48; j++) {
             for (int k = 0; k < 48; k++) {
@@ -168,7 +138,7 @@ void center1_init_sym(void) {
         if (i%16==15) ct1_rot(c, 3);
     }
 
-    /* Conjugation: find k such that sym[i] ∘ move_j ∘ sym[syminv[i]] = move_k. */
+    /* Conjugation: find k such that sym[i] . move_j . sym[syminv[i]] = move_k. */
     for (int i = 0; i < 48; i++) {
         memcpy(c, e, 24);
         ct1_rotate(c, syminv[i]);
@@ -199,7 +169,7 @@ void center1_init_sym(void) {
     }
 }
 
-/* Step 4b -- BFS: raw2sym[raw]=(class<<6)|syminv[j], sym2raw[class]=rep. */
+/* BFS: raw2sym[raw]=(class<<6)|syminv[j], sym2raw[class]=rep. */
 void center1_init_sym2raw(void) {
     uint32_t occ[(CENTER1_RAW_COORDS + 31) / 32];
     memset(occ, 0, sizeof(occ));
@@ -224,7 +194,7 @@ void center1_init_sym2raw(void) {
     }
 }
 
-/* Step 4c -- ctsmv[class][move] = (new_class<<6)|new_sym. */
+/* ctsmv[class][move] = (new_class<<6)|new_sym. */
 void center1_create_move_table(void) {
     uint8_t ct[24], d[24];
     for (int i = 0; i < CENTER1_SYM_CLASSES; i++) {
@@ -237,7 +207,7 @@ void center1_create_move_table(void) {
     }
 }
 
-/* Step 4d -- pruning table; forward BFS depth≤4, backward beyond; 27-move set. */
+/* pruning table; forward BFS depth≤4, backward beyond; 27-move set. */
 void center1_create_prun(void) {
     memset(csprun, 0xFF, sizeof(csprun));
     csprun[0] = 0;
@@ -269,8 +239,4 @@ void center1_init(void) {
     center1_init_sym2raw();
     center1_create_move_table();
     center1_create_prun();
-}
-
-int center1_is_solved(int sym_class) {
-    return csprun[sym_class] == 0;
 }

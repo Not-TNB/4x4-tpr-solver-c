@@ -9,24 +9,19 @@ extern int Cnk[25][25];
 /* Factorials 0..12. */
 extern int fact[13];
 
-void tpr_util_init(void); /* populate Cnk and fact */
+void build_pascal_triangle(void); /* populate Cnk */
 
 /*
  * 4-position cyclic rotate on an array of int or uint8_t.
- *   key=0: CW  a←d←c←b←a
+ *   key=0: CW  a<-d<-c<-b<-a
  *   key=1: 2×swap  a↔c, b↔d
  *   key=2: CCW a->b->c->d->a
  */
 void swap4_int  (int    *arr, int a, int b, int c, int d, int key);
 void swap4_u8   (uint8_t *arr, int a, int b, int c, int d, int key);
 
-/* 2-element swap helpers. */
-void swap2_int(int    *arr, int x, int y);
-void swap2_u8 (uint8_t *arr, int x, int y);
-
 /* Permutation parity (number of inversions mod 2). */
 int parity_u8 (const uint8_t *arr, int len);
-int parity_int(const int     *arr, int len);
 
 /*
  * Decode integer idx (0..40319) into a permutation of 8 elements

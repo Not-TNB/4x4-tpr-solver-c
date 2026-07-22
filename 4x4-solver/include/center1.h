@@ -51,25 +51,9 @@ int center1_get(const uint8_t ct[24]);
  * Marks positions where ct[i] % 3 == urf. Used for three-axis Phase 1. */
 int center1_raw_urf(const uint8_t ct[24], int urf);
 
-/* Apply move m (0..35) to a raw Center1 coordinate. */
-int center1_move_raw(int raw, int m);
-
-/* Apply move m to a sym-class coordinate. */
-int center1_move_sym(int sym_class, int m);
-
-/* Get the symmetry element that maps sym_class -> the class representative. */
-int center1_getsym(int raw);
-
-/* Rotate a raw coord by symmetry element s (0..47). */
-int center1_rotate(int raw, int s);
-
 /* -------------------------------------------------------------------------
  * Pruning
  * ------------------------------------------------------------------------- */
-
-/* Query/set pruning table entry (0-indexed distance to Phase 1 goal). */
-int    center1_prun_get(int sym_class);
-void   center1_prun_set(int sym_class, int dist);
 
 /* -------------------------------------------------------------------------
  * Initialisation
@@ -89,14 +73,5 @@ void center1_create_prun(void);
 
 /* Top-level init: calls the above in order. */
 void center1_init(void);
-
-/* -------------------------------------------------------------------------
- * Solved detection
- *
- * A Center1 state is solved if all U/D-colour centres are on U or D.
- * Because of symmetry there are multiple solved raw coordinates.
- * center1_is_solved(sym_class) checks via finish[] bitmask.
- * ------------------------------------------------------------------------- */
-int center1_is_solved(int sym_class);
 
 #endif /* CENTER1_H */

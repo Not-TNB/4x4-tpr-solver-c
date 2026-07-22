@@ -108,7 +108,7 @@ int tpr_solve(const char *facelet96, char *buf, int buf_len);
  * Initialisation
  *
  * Call once before any tpr_solve() call. Builds all phase tables in order:
- *   1. tpr_util_init
+ *   1. build_pascal_triangle
  *   2. moves_init
  *   3. corner_cube_init_moves  (cubie.h)
  *   4. center1_init

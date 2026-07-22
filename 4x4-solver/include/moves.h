@@ -33,24 +33,24 @@
 #define Bx3 17
 
 /* Wide (2-layer) moves */
-#define ux1 18
-#define ux2 19
-#define ux3 20
-#define rx1 21
-#define rx2 22
-#define rx3 23
-#define fx1 24
-#define fx2 25
-#define fx3 26
-#define dx1 27
-#define dx2 28
-#define dx3 29
-#define lx1 30
-#define lx2 31
-#define lx3 32
-#define bx1 33
-#define bx2 34
-#define bx3 35
+#define Uwx1 18
+#define Uwx2 19
+#define Uwx3 20
+#define Rwx1 21
+#define Rwx2 22
+#define Rwx3 23
+#define Fwx1 24
+#define Fwx2 25
+#define Fwx3 26
+#define Dwx1 27
+#define Dwx2 28
+#define Dwx3 29
+#define Lwx1 30
+#define Lwx2 31
+#define Lwx3 32
+#define Bwx1 33
+#define Bwx2 34
+#define Bwx3 35
 
 #define EOM 36  /* end-of-move-set sentinel */
 

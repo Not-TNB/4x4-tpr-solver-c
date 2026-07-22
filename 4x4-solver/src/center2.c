@@ -69,17 +69,17 @@ void center2_setct(Center2State *s, int idx) {
 }
 
 /* -------------------------------------------------------------------------
- * Move simulation (port of Java Center2.move)
+ * Move simulation
  *
- * pmv[m] = 1 for moves that toggle edge parity: rx1(21), rx3(23), lx1(30), lx3(32).
+ * pmv[m] = 1 for moves that toggle edge parity: Rwx1(21), Rwx3(23), Lwx1(30), Lwx3(32).
  * ------------------------------------------------------------------------- */
 static const int pmv[36] = {
     0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0,  /* outer U R F D L B */
     0,0,0,                                        /* Uw */
-    1,0,1,                                        /* Rw: rx1 toggles, rx2 no, rx3 toggles */
+    1,0,1,                                        /* Rw: Rwx1 toggles, Rwx2 no, Rwx3 toggles */
     0,0,0,                                        /* Fw */
     0,0,0,                                        /* Dw */
-    1,0,1,                                        /* Lw: lx1 toggles, lx2 no, lx3 toggles */
+    1,0,1,                                        /* Lw: Lwx1 toggles, Lwx2 no, Lwx3 toggles */
     0,0,0                                         /* Bw */
 };
 
@@ -128,30 +128,6 @@ void center2_move(Center2State *s, int m) {
 }
 
 /* -------------------------------------------------------------------------
- * Move table accessors
- * ------------------------------------------------------------------------- */
-
-int center2_rl_move(int rl, int p2m) {
-    return rlmv[rl][p2m];
-}
-
-int center2_ct_move(int ct, int p2m) {
-    return ctmv[ct][p2m];
-}
-
-/* -------------------------------------------------------------------------
- * Pruning
- * ------------------------------------------------------------------------- */
-
-int center2_prun_get(int rl, int ct) {
-    return ctprun[ct * CENTER2_RL_COORDS + rl];
-}
-
-void center2_prun_set(int rl, int ct, int dist) {
-    ctprun[ct * CENTER2_RL_COORDS + rl] = (uint8_t)dist;
-}
-
-/* -------------------------------------------------------------------------
  * Initialisation
  * ------------------------------------------------------------------------- */
 
@@ -183,7 +159,7 @@ void center2_create_prun(void) {
     /* Seed the 6 solved states (ct=0, rl in {0,18,28,46,54,56}). */
     static const int solved_rl[6] = {0, 18, 28, 46, 54, 56};
     for (int i = 0; i < 6; i++)
-        ctprun[solved_rl[i]] = 0;   /* ct=0 → index = 0*70 + rl = rl */
+        ctprun[solved_rl[i]] = 0;   /* ct=0 -> index = 0*70 + rl = rl */
 
     /* Forward BFS using first 23 of the 28 phase-2 moves. */
     int done = 6;

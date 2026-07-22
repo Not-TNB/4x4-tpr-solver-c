@@ -5,8 +5,8 @@
 const char *move2str[36] = {
     "U","U2","U'","R","R2","R'","F","F2","F'",
     "D","D2","D'","L","L2","L'","B","B2","B'",
-    "u","u2","u'","r","r2","r'","f","f2","f'",
-    "d","d2","d'","l","l2","l'","b","b2","b'"
+    "Uw","Uw2","Uw'","Rw","Rw2","Rw'","Fw","Fw2","Fw'",
+    "Dw","Dw2","Dw'","Lw","Lw2","Lw'","Bw","Bw2","Bw'"
 };
 
 /*
@@ -20,12 +20,12 @@ int move2std[29] = {
     Dx1, Dx2, Dx3,
     Lx1, Lx2, Lx3,
     Bx1, Bx2, Bx3,
-    ux2,             /* Uw2 only */
-    rx1, rx2, rx3,   /* all Rw   */
-    fx2,             /* Fw2 only */
-    dx2,             /* Dw2 only */
-    lx1, lx2, lx3,  /* all Lw   */
-    bx2,             /* Bw2 only */
+    Uwx2,             /* Uw2 only */
+    Rwx1, Rwx2, Rwx3, /* all Rw   */
+    Fwx2,             /* Fw2 only */
+    Dwx2,             /* Dw2 only */
+    Lwx1, Lwx2, Lwx3, /* all Lw   */
+    Bwx2,             /* Bw2 only */
     EOM
 };
 
@@ -40,12 +40,12 @@ int move3std[21] = {
     Dx1, Dx2, Dx3,
     Lx2,
     Bx1, Bx2, Bx3,
-    ux2,
-    rx2,
-    fx2,
-    dx2,
-    lx2,
-    bx2,
+    Uwx2,
+    Rwx2,
+    Fwx2,
+    Dwx2,
+    Lwx2,
+    Bwx2,
     EOM
 };
 

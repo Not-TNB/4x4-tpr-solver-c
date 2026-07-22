@@ -31,27 +31,19 @@ typedef struct {
 /* Populate s from a CenterCube ct[24] and edge permutation parity (0 or 1). */
 void center3_set(Center3State *s, const uint8_t ct[24], int eparity);
 
-/* Encode s → combined coordinate [0, 29399]. */
+/* Encode s -> combined coordinate [0, 29399]. */
 int center3_getct(const Center3State *s);
 
-/* Decode combined coordinate → s. */
+/* Decode combined coordinate -> s. */
 void center3_setct(Center3State *s, int idx);
 
 /* Apply Phase 3 move p3m (0..19) to s in place. */
 void center3_move(Center3State *s, int p3m);
-
-/* Table lookup: new ct_coord after applying move p3m. */
-int center3_ct_move(int ct_coord, int p3m);
-
-/* Pruning: lower bound on moves to reach ct_coord == 0. */
-int center3_prun_get(int ct_coord);
 
 /* Initialisation. */
 void center3_create_move_table(void);
 void center3_create_prun(void);
 void center3_init(void);
 
-/* Solved iff ct_coord == 0. */
-int center3_is_solved(int ct_coord);
 
 #endif /* CENTER3_H */

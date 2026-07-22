@@ -37,9 +37,7 @@ typedef struct {
 extern const uint8_t centerFacelet[24];
 
 void center_cube_identity(CenterCube *c);
-void center_cube_copy(CenterCube *dst, const CenterCube *src);
 void center_cube_move(CenterCube *c, int m); /* m = move index 0..35 */
-void center_cube_fill_333_facelet(const CenterCube *c, const char *facelet54);
 
 /* -------------------------------------------------------------------------
  * EdgeCube
@@ -53,18 +51,10 @@ typedef struct {
     uint8_t ep[24];
 } EdgeCube;
 
-/* Two face-colours for each of the 12 edge pairs (indexed 0–11). */
-extern const int edge_color[12][2];
-
-/* Maps wing slots 0–23 to 3×3 facelet positions (for 333 conversion). */
-extern const int edge_map[24];
-
 void edge_cube_identity(EdgeCube *e);
-void edge_cube_copy(EdgeCube *dst, const EdgeCube *src);
 void edge_cube_move(EdgeCube *e, int m);
 bool edge_cube_check(const EdgeCube *e);  /* valid state for phase 3 entry */
 int  edge_cube_parity(const EdgeCube *e);
-void edge_cube_fill_333_facelet(const EdgeCube *e, const char *facelet54);
 
 /* -------------------------------------------------------------------------
  * CornerCube
@@ -88,7 +78,6 @@ void corner_cube_copy(CornerCube *dst, const CornerCube *src);
 void corner_cube_mult(const CornerCube *a, const CornerCube *b, CornerCube *prod);
 void corner_cube_move(CornerCube *c, int m); /* m in 0..35, only outer 0..17 matter */
 int  corner_cube_parity(const CornerCube *c);
-void corner_cube_fill_333_facelet(const CornerCube *c, const char *facelet54);
 void corner_cube_init_moves(void); /* build corner_move_cube[18] */
 
 /* -------------------------------------------------------------------------
@@ -97,7 +86,7 @@ void corner_cube_init_moves(void); /* build corner_move_cube[18] */
  * Combines all three sub-cubes with lazy-evaluation move buffering.
  * Moves are appended to moveBuffer and applied to sub-cubes on demand.
  * ------------------------------------------------------------------------- */
-#define FULLCUBE_MOVE_BUF 60
+#define FULLCUBE_MOVE_BUF 100
 
 typedef struct {
     EdgeCube   edge;
@@ -135,9 +124,6 @@ CornerCube *fullcube_get_corner(FullCube *c);
 
 /* Build FullCube from a 96-char facelet string ("URFDLB" chars). */
 void fullcube_from_facelet(FullCube *c, const char *facelet96);
-
-/* Convert to 54-char 3×3 facelet string for min2phase. */
-void fullcube_to_333_facelet(FullCube *c, char *out54);
 
 /* Build FullCube by applying a sequence of move indices. */
 void fullcube_from_moves(FullCube *c, const int *moves, int n);

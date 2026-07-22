@@ -6,6 +6,7 @@
 #include "../include/tpr_util.h"
 #include "../include/moves.h"
 #include <stdio.h>
+#include <string.h>
 
 /* -------------------------------------------------------------------------
  * Phase 1 -- IDA* over Center1 sym-class coordinate.
@@ -40,7 +41,7 @@ static int       p1_max;
  */
 static void search1_ida(FullCube *fc, int depth, int bound,
                          int coord, int sym, int prev_move) {
-    int h = center1_prun_get(coord);
+    int h = csprun[coord];
     if (h > bound - depth) return;
 
     if (h == 0) {
@@ -84,14 +85,14 @@ int search1(const FullCube *state, FullCube *out, int max_out) {
 
     /* Compute starting (coord, sym, prun) for all three axes.
      * urf=0: UD axis (color%3==0), urf=1: RL axis, urf=2: FB axis.
-     * Search order matches Java: FB(2), UD(0), RL(1). */
+     * Search order: FB(2), UD(0), RL(1). */
     static const int axis_order[3] = {2, 0, 1};
     int coords[3], syms[3], pruns[3];
     for (int urf = 0; urf < 3; urf++) {
         int packed   = raw2sym[center1_raw_urf(ct->ct, urf)];
         coords[urf]  = packed >> 6;
         syms[urf]    = packed & 0x3f;
-        pruns[urf]   = center1_prun_get(coords[urf]);
+        pruns[urf]   = csprun[coords[urf]];
     }
 
     int min_prun = pruns[0];
@@ -123,11 +124,11 @@ static int       p2_max;
 
 static void search2_ida(FullCube *fc, int depth, int bound,
                           int rl, int ct_coord, int prev_move) {
-    int h = center2_prun_get(rl, ct_coord);
+    int h = ctprun[ct_coord * CENTER2_RL_COORDS + rl];
     if (h > bound - depth) return;
 
     if (center2_is_solved(rl, ct_coord) && p2_found < p2_max) {
-        /* Gate: edges must be paired (Java's checkEdge()) before entering Phase 3.
+        /* Gate: edges must be paired before entering Phase 3.
          * Apply buffered moves to a throwaway copy to avoid corrupting edgeAvail. */
         EdgeCube tmp_edge = fc->edge;
         for (int j = fc->edgeAvail; j < fc->moveLength; j++)
@@ -142,7 +143,7 @@ static void search2_ida(FullCube *fc, int depth, int bound,
     if (depth == bound) return;
 
     /* Use the same 23-move set that the pruning BFS was built with.
-     * The 5 excluded moves (dx2, lx1, lx2, lx3, bx2) would expand the tree
+     * The 5 excluded moves (Dwx2, Lwx1, Lwx2, Lwx3, Bwx2) would expand the tree
      * without improving pruning effectiveness. */
     for (int mi = 0; mi < 23; mi++) {
         if (prev_move < 23 && ckmv2[prev_move][mi]) {
@@ -150,8 +151,8 @@ static void search2_ida(FullCube *fc, int depth, int bound,
             continue;
         }
         int m   = move2std[mi];
-        int nrl = center2_rl_move(rl, mi);
-        int nct = center2_ct_move(ct_coord, mi);
+        int nrl = rlmv[rl][mi];
+        int nct = ctmv[ct_coord][mi];
         fullcube_move(fc, m);
         search2_ida(fc, depth+1, bound, nrl, nct, mi);
         fc->moveLength--;
@@ -189,7 +190,7 @@ int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
         }
         cands[i].rl    = center2_getrl(&c2s);
         cands[i].ct    = center2_getct(&c2s);
-        cands[i].score = p1[i].length1 + center2_prun_get(cands[i].rl, cands[i].ct);
+        cands[i].score = p1[i].length1 + ctprun[cands[i].ct * CENTER2_RL_COORDS + cands[i].rl];
         cands[i].idx   = i;
     }
 
@@ -201,8 +202,7 @@ int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
         cands[j+1] = tmp;
     }
 
-    /* Start with max 9 Phase-2 moves (matching Java's MAX_LENGTH2=9).
-     * Retry with a larger cap only if no solution exists at this depth. */
+    /* Start with max 9 Phase-2 moves; retry with a larger cap if none found. */
     int max_p2 = 9;
     do {
         for (int ii = 0; ii < n1 && p2_found < p2_max; ii++) {
@@ -238,25 +238,29 @@ int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
 static int p3_done;
 static FullCube p3_result;
 
-/* TODO step 12: full redesign with Edge3State tempe[21] and getmvrot-based transitions. */
-
 static Edge3State tempe[21];
 
 /*
- * `raw_edge` = edge3_get(&es, 10): the 10-element Lehmer rank of the current
- * 12-permutation, range [0, P(12,10)).  This bijectively encodes the full valid
- * edge state.  Goal: raw_edge == 0 (identity permutation).
+ * search3_ida -- IDA* over (Center3 × Edge3) joint coordinate.
  *
- * We track raw_edge (not the sym-reduced coord) so that edge3_set_from_int
- * reconstructs the ACTUAL current state, not the canonical class representative.
- * Sym-reduction is only used for the pruning-table lookup (new_edge_coord).
+ * edge_coord = symcord1 * N_RAW + cord2 (sym-reduced, used for pruning and
+ * goal detection).  tempe[depth] holds the current std-normalised Edge3State,
+ * populated by the caller before each invocation (root: copied from es0;
+ * recursive levels: memcpy + edge3_move + edge3_std from parent).
+ *
+ * Fix 1: tempe is maintained incrementally — no set_from_int per node.
+ * Fix 2: cord1x uses getmvrot(end=4) instead of end=10, saving 6 Lehmer iters.
+ * Fix 3: both center3 and edge3 heuristics are checked at function entry.
  */
 static void search3_ida(FullCube *fc, int depth, int bound,
-                          int ct, int raw_edge, int prun, int prev_move) {
-    int h_c = center3_prun_get(ct);
+                          int ct, int edge_coord, int prun, int prev_move) {
+    int h_c = c3prun[ct];
     if (h_c > bound - depth) return;
 
-    if (ct == 0 && raw_edge == 0) {
+    int h_e = edge3_getprun(edge_coord);   /* Fix 3 */
+    if (h_e > bound - depth) return;
+
+    if (ct == 0 && edge_coord == 0) {
         fullcube_copy(&p3_result, fc);
         p3_result.length3 = depth;
         p3_done = 1;
@@ -265,7 +269,7 @@ static void search3_ida(FullCube *fc, int depth, int bound,
 
     if (depth == bound) return;
 
-    edge3_set_from_int(&tempe[depth], raw_edge);
+    /* tempe[depth] already populated by caller — no set_from_int needed. */
 
     int child_prun = (prun + 1) % 3;
     int remaining  = bound - depth - 1;
@@ -276,31 +280,35 @@ static void search3_ida(FullCube *fc, int depth, int bound,
             continue;
         }
         int m    = move3std[mi];
-        int nct  = center3_ct_move(ct, mi);
+        int nct  = ctmove[ct][mi];
 
-        int h_c2 = center3_prun_get(nct);
+        int h_c2 = c3prun[nct];
         if (h_c2 > remaining) {
             if (h_c2 > remaining + 1 && mi < 14) mi = skipAxis3[mi] - 1;
             continue;
         }
 
-        /* Compute raw next-state rank (end=10), then sym-reduce for pruning. */
-        int raw_edgex     = edge3_getmvrot(tempe[depth].edge, mi * 8, 10);
-        int cord1x        = raw_edgex / EDGE3_RAW_PERMS;
-        int sym_raw       = e3raw2sym[cord1x];
-        int symx          = sym_raw & 7;
-        int new_cls       = sym_raw >> 3;
-        int cord2x        = edge3_getmvrot(tempe[depth].edge, mi * 8 | symx, 10) % EDGE3_RAW_PERMS;
+        /* Fix 2: cord1x needs only end=4 (P(12,4) range); saves 6 Lehmer iters. */
+        int cord1x         = edge3_getmvrot(tempe[depth].edge, mi * 8, 4);
+        int sym_raw        = e3raw2sym[cord1x];
+        int symx           = sym_raw & 7;
+        int new_cls        = sym_raw >> 3;
+        int cord2x         = edge3_getmvrot(tempe[depth].edge, mi * 8 | symx, 10) % EDGE3_RAW_PERMS;
         int new_edge_coord = new_cls * EDGE3_RAW_PERMS + cord2x;
 
-        int h_e2 = edge3_getprun(new_edge_coord, child_prun);
+        int h_e2 = edge3_getprun(new_edge_coord);
         if (h_e2 > remaining) {
             if (h_e2 > remaining + 1 && mi < 14) mi = skipAxis3[mi] - 1;
             continue;
         }
 
+        /* Fix 1: build child edge state incrementally from parent. */
+        memcpy(&tempe[depth + 1], &tempe[depth], sizeof(Edge3State));
+        edge3_move(&tempe[depth + 1], mi);
+        edge3_std(&tempe[depth + 1]);
+
         fullcube_move(fc, m);
-        search3_ida(fc, depth+1, bound, nct, raw_edgex, child_prun, mi);
+        search3_ida(fc, depth + 1, bound, nct, new_edge_coord, child_prun, mi);
         fc->moveLength--;
         if (p3_done) return;
     }
@@ -314,16 +322,17 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
      * Precompute P3 coordinates and heuristics for every P2 candidate,
      * then sort by (total_base + max(h_c, h_e)) ascending.
      * Joint IDA* then tries all candidates in increasing total-bound
-     * order, matching the Java doSearch() length123 outer loop.
+     * order, in increasing total-bound order.
      * ------------------------------------------------------------------ */
     typedef struct {
-        int p2_idx;
-        int ct;
-        int raw_edge;
-        int h_c;        /* exact center3 heuristic */
-        int h_e;        /* edge lower-bound: depm3 ∈ {0,1,2} or 10 if unseen */
-        int total_base; /* length1 + length2 */
-        int min_total;  /* total_base + max(h_c, h_e) */
+        int        p2_idx;
+        int        ct;
+        Edge3State es0;        /* std-normalised starting state (pre-sym-rotation) */
+        int        edge_coord; /* sym-reduced coordinate for pruning and goal check */
+        int        h_c;        /* exact center3 heuristic */
+        int        h_e;        /* edge lower-bound: exact depth or 10 if unseen */
+        int        total_base; /* length1 + length2 */
+        int        min_total;  /* total_base + max(h_c, h_e) */
     } P3Cand;
 
     P3Cand cands[SEARCH_BEAM2_MAX];
@@ -343,29 +352,27 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
         edge3_set_from_edgecube(&es, ec->ep);
         edge3_std(&es);
 
-        /* Capture raw_edge BEFORE sym-rotation (used by search3_ida). */
+        /* Sym-reduce to get edge_coord for pruning; keep es intact as es0. */
         int cord1    = edge3_get(&es, 4);
-        int raw_edge = edge3_get(&es, 10);
-
-        /* Sym-reduce to get edge_coord for the pruning-table lookup. */
         int sym_raw  = e3raw2sym[cord1];
         int symx     = sym_raw & 7;
         int symcord1 = sym_raw >> 3;
-        edge3_rotate(&es, symx);
-        edge3_std(&es);
-        int cord2_sym  = edge3_get(&es, 10) % EDGE3_RAW_PERMS;
+        Edge3State es_rot = es;         /* rotate a copy; es stays as the start state */
+        edge3_rotate(&es_rot, symx);
+        edge3_std(&es_rot);
+        int cord2_sym  = edge3_get(&es_rot, 10) % EDGE3_RAW_PERMS;
         int edge_coord = symcord1 * EDGE3_RAW_PERMS + cord2_sym;
 
         int ct    = center3_getct(&c3s);
-        int h_c   = center3_prun_get(ct);
-        int depm3 = edge3_get_pruning(edge_coord);
-        int h_e   = (depm3 == 3) ? 10 : depm3;
+        int h_c = c3prun[ct];
+        int h_e = edge3_getprun(edge_coord);
         int tb    = p2[i].length1 + p2[i].length2;
         int hmax  = h_c > h_e ? h_c : h_e;
 
         cands[nc].p2_idx     = i;
         cands[nc].ct         = ct;
-        cands[nc].raw_edge   = raw_edge;
+        cands[nc].es0        = es;
+        cands[nc].edge_coord = edge_coord;
         cands[nc].h_c        = h_c;
         cands[nc].h_e        = h_e;
         cands[nc].total_base = tb;
@@ -397,7 +404,8 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
 
             FullCube fc;
             fullcube_copy(&fc, &p2[c->p2_idx]);
-            search3_ida(&fc, 0, p3_bound, c->ct, c->raw_edge, p3_bound % 3, 20);
+            tempe[0] = c->es0;   /* seed incremental edge state for depth 0 */
+            search3_ida(&fc, 0, p3_bound, c->ct, c->edge_coord, p3_bound % 3, 20);
         }
     }
 
@@ -427,7 +435,7 @@ int get_move_string(const FullCube *result, char *buf, int buf_len) {
  * ------------------------------------------------------------------------- */
 
 void tpr_init(void) {
-    tpr_util_init();
+    build_pascal_triangle();
     moves_init();
     corner_cube_init_moves();
     center1_init();

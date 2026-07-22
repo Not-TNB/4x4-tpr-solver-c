@@ -1,6 +1,5 @@
 #include "../include/center3.h"
 #include "../include/tpr_util.h"
-#include "../include/moves.h"
 #include <string.h>
 
 /* -------------------------------------------------------------------------
@@ -21,16 +20,14 @@ static int std2rl[70];
 static const int pmove[20] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1};
 
 /* -------------------------------------------------------------------------
- * center3_set -- populate s from a CenterCube and edge parity.
- *
  * ud[i] = 1 if the piece at U/D position i (ct[i])   has a "top" color (U/R/F)
  * fb[i] = 1 if the piece at F/B position i (ct[i+8]) has a "top" color
  * rl[i] = similar for R/L positions, XOR'd with internal parity
  *
  * After Phase 2 only UD pieces occupy positions 0-7, only FB occupy 8-15, only
  * RL occupy 16-23, so:
- *   ud[i]==1 → U-colored piece, ud[i]==0 → D-colored
- *   fb[i]==1 → F-colored,       fb[i]==0 → B-colored
+ *   ud[i]==1 -> U-colored piece, ud[i]==0 -> D-colored
+ *   fb[i]==1 -> F-colored,       fb[i]==0 -> B-colored
  *   rl[i] encodes R vs L after parity adjustment
  * ------------------------------------------------------------------------- */
 void center3_set(Center3State *s, const uint8_t ct[24], int eparity) {
@@ -45,12 +42,10 @@ void center3_set(Center3State *s, const uint8_t ct[24], int eparity) {
 }
 
 /* -------------------------------------------------------------------------
- * center3_getct -- encode to combined [0, 29399] coordinate.
- *
  * Layout: parity + 2 * (ud_rank*35*12 + fb_rank*12 + std2rl[rl_rank_raw])
- *   ud_rank: C(7,4) rank of positions 0-6 differing from ud[7]  → [0,34]
- *   fb_rank: same for fb                                          → [0,34]
- *   rl_rank: C(8,4) rank using check = fb[7]^ud[7] as reference → 12 values
+ *   ud_rank: C(7,4) rank of positions 0-6 differing from ud[7]  -> [0,34]
+ *   fb_rank: same for fb                                        -> [0,34]
+ *   rl_rank: C(8,4) rank using check = fb[7]^ud[7] as reference -> 12 values
  * ------------------------------------------------------------------------- */
 int center3_getct(const Center3State *s) {
     int idx = 0, r = 4;
@@ -68,9 +63,7 @@ int center3_getct(const Center3State *s) {
     return s->parity + 2 * (idx + std2rl[idxrl]);
 }
 
-/* -------------------------------------------------------------------------
- * center3_setct -- decode combined coordinate back into s.
- * ------------------------------------------------------------------------- */
+/* decode combined coordinate back into s */
 void center3_setct(Center3State *s, int idx) {
     s->parity = idx & 1;
     idx >>= 1;
@@ -98,9 +91,7 @@ void center3_setct(Center3State *s, int idx) {
 }
 
 /* -------------------------------------------------------------------------
- * center3_move -- apply Phase 3 move p3m (0..19) to s.
- *
- * Move index → Java Center3 case mapping (identical ordering):
+ * Move index -> case mapping (identical ordering):
  *   0-2  : U, U2, U'           3  : R2        4-6  : F, F2, F'
  *   7-9  : D, D2, D'           10 : L2        11-13: B, B2, B'
  *   14-19: Uw2 Rw2 Fw2 Dw2 Lw2 Bw2
@@ -159,16 +150,7 @@ void center3_move(Center3State *s, int p3m) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * Table accessors
- * ------------------------------------------------------------------------- */
-int center3_ct_move(int ct_coord, int p3m) { return ctmove[ct_coord][p3m]; }
-int center3_prun_get(int ct_coord)          { return c3prun[ct_coord]; }
-int center3_is_solved(int ct_coord)         { return ct_coord == 0; }
-
-/* -------------------------------------------------------------------------
- * center3_create_move_table -- build ctmove[29400][20] by simulation.
- * ------------------------------------------------------------------------- */
+/* build ctmove[29400][20] */
 void center3_create_move_table(void) {
     Center3State s;
     for (int i = 0; i < CENTER3_STATE_COORDS; i++) {
@@ -181,10 +163,6 @@ void center3_create_move_table(void) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * center3_create_prun -- forward BFS from state 0 using first 17 of 20 moves.
- * (Matching Java: only p3m 0-16 used in BFS; Dw2/Lw2/Bw2 excluded.)
- * ------------------------------------------------------------------------- */
 void center3_create_prun(void) {
     memset(c3prun, 0xFF, sizeof(c3prun));
     c3prun[0] = 0;
