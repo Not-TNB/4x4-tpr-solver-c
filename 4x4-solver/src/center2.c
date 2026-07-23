@@ -26,7 +26,7 @@ int center2_getrl(const Center2State *s) {
     int idx = 0, r = 4;
     for (int i = 6; i >= 0; i--) {
         if (s->rl[i] != s->rl[7])
-            idx += Cnk[i][r--];
+            idx += tpr_Cnk[i][r--];
     }
     return idx * 2 + s->parity;
 }
@@ -37,8 +37,8 @@ void center2_setrl(Center2State *s, int idx) {
     int r = 4;
     s->rl[7] = 0;
     for (int i = 6; i >= 0; i--) {
-        if (idx >= Cnk[i][r]) {
-            idx -= Cnk[i][r--];
+        if (idx >= tpr_Cnk[i][r]) {
+            idx -= tpr_Cnk[i][r--];
             s->rl[i] = 1;
         } else {
             s->rl[i] = 0;
@@ -50,7 +50,7 @@ int center2_getct(const Center2State *s) {
     int idx = 0, r = 8;
     for (int i = 14; i >= 0; i--) {
         if (s->ct[i] != s->ct[15])
-            idx += Cnk[i][r--];
+            idx += tpr_Cnk[i][r--];
     }
     return idx;
 }
@@ -59,8 +59,8 @@ void center2_setct(Center2State *s, int idx) {
     int r = 8;
     s->ct[15] = 0;
     for (int i = 14; i >= 0; i--) {
-        if (idx >= Cnk[i][r]) {
-            idx -= Cnk[i][r--];
+        if (idx >= tpr_Cnk[i][r]) {
+            idx -= tpr_Cnk[i][r--];
             s->ct[i] = 1;
         } else {
             s->ct[i] = 0;

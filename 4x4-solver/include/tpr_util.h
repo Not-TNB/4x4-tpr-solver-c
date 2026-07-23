@@ -4,12 +4,12 @@
 #include <stdint.h>
 
 /* Pascal's triangle C(n,k) for n,k in [0,24]. */
-extern int Cnk[25][25];
+extern int tpr_Cnk[25][25];
 
 /* Factorials 0..12. */
 extern int fact[13];
 
-void build_pascal_triangle(void); /* populate Cnk */
+void build_pascal_triangle(void); /* populate tpr_Cnk */
 
 /*
  * 4-position cyclic rotate on an array of int or uint8_t.

@@ -27,14 +27,14 @@
  * ct[i] = face colour (0–5) of the piece occupying centre position i.
  * 24 positions: U(0–3) D(4–7) F(8–11) B(12–15) R(16–19) L(20–23).
  *
- * Solved: ct[i] = centerFacelet[i] / 16.
+ * Solved: ct[i] = center_facelet[i] / 16.
  * ------------------------------------------------------------------------- */
 typedef struct {
     uint8_t ct[24];
 } CenterCube;
 
 /* The 24 centre facelet slots in solved-state position order. */
-extern const uint8_t centerFacelet[24];
+extern const uint8_t center_facelet[24];
 
 void center_cube_identity(CenterCube *c);
 void center_cube_move(CenterCube *c, int m); /* m = move index 0..35 */
@@ -84,7 +84,7 @@ void corner_cube_init_moves(void); /* build corner_move_cube[18] */
  * FullCube
  *
  * Combines all three sub-cubes with lazy-evaluation move buffering.
- * Moves are appended to moveBuffer and applied to sub-cubes on demand.
+ * Moves are appended to move_buffer and applied to sub-cubes on demand.
  * ------------------------------------------------------------------------- */
 #define FULLCUBE_MOVE_BUF 100
 
@@ -93,11 +93,11 @@ typedef struct {
     CenterCube center;
     CornerCube corner;
 
-    uint8_t moveBuffer[FULLCUBE_MOVE_BUF];
-    int     moveLength;
-    int     edgeAvail;    /* how many buffered moves are applied to edge   */
-    int     centerAvail;  /* how many buffered moves are applied to centre */
-    int     cornerAvail;  /* how many buffered moves are applied to corner */
+    uint8_t move_buffer[FULLCUBE_MOVE_BUF];
+    int     move_length;
+    int     edge_avail;    /* how many buffered moves are applied to edge   */
+    int     center_avail;  /* how many buffered moves are applied to centre */
+    int     corner_avail;  /* how many buffered moves are applied to corner */
 
     /* Search metadata (set by phase searches). */
     int  value;    /* priority = length1 + length2 + lower_bound */
@@ -127,5 +127,14 @@ void fullcube_from_facelet(FullCube *c, const char *facelet96);
 
 /* Build FullCube by applying a sequence of move indices. */
 void fullcube_from_moves(FullCube *c, const int *moves, int n);
+
+/* Apply a sequence of move indices to an existing FullCube. */
+void fullcube_do_alg(FullCube *c, const int *moves, int n);
+
+/*
+ * Convert FullCube to 54-char ckociemba facelet string.
+ * PRE: c is reduced to a 3x3 (without OLL/PLL parity issues)
+ */
+void fullcube_to_333_facelet(FullCube *c, char out54[55]);
 
 #endif /* CUBIE_H */

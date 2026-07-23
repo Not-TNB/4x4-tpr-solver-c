@@ -1,4 +1,6 @@
+#include "../ckociemba/include/search.h"
 #include "../include/search.h"
+#include "../include/cubie.h"
 #include "../include/center1.h"
 #include "../include/center2.h"
 #include "../include/center3.h"
@@ -7,6 +9,7 @@
 #include "../include/moves.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 /* -------------------------------------------------------------------------
  * Phase 1 -- IDA* over Center1 sym-class coordinate.
@@ -20,48 +23,32 @@ static int p1_found;
 static FullCube *p1_out;
 static int       p1_max;
 
-/*
- * search1_ida -- IDA* with accumulated-symmetry tracking.
- *
- * coord: current sym-class (index into csprun/ctsmv).
- * sym:   accumulated symmetry element (index into symmult/symmove/finish).
- *
- * For each move m we conjugate by sym before the table lookup:
- *   conjugated_move = symmove[sym][m]
- *   packed          = ctsmv[coord][conjugated_move]   -> (new_class<<6)|delta_sym
- *   new_sym         = symmult[sym][delta_sym]
- *
- * This ensures coord tracks the TRUE orbit class of the actual cube state.
- * Without it, ctsmv[coord][m] would give the class for the canonical orbit
- * representative rather than the actual state, causing spurious class-0 hits.
- *
- * At class 0 we stop (don't explore further; class 0 = raw=0 = goal).
- * finish[sym]==0 is checked as a guard, but since all 4 primitive rotations
- * fix raw=0 the orbit of raw=0 is a singleton and finish[s]==0 for all s.
- */
+/* IDA* with accumulated-symmetry tracking: each move is conjugated by sym
+ * before the table lookup so coord tracks the true orbit class, not just the
+ * canonical representative (preventing spurious class-0 hits).
+ * class-0 is always the goal: finish[sym]==0 for all sym (orbit of raw=0 is
+ * a singleton — all 4 primitive rotations fix it). */
 static void search1_ida(FullCube *fc, int depth, int bound,
                          int coord, int sym, int prev_move) {
     int h = csprun[coord];
     if (h > bound - depth) return;
 
     if (h == 0) {
-        /* Accept only finish==735470: the 8 tracked pieces are in positions 16-23.
-         * This is the only case where center2_getrl() returns a valid [0,69] value.
-         * finish==0 (pieces in 0-7) and finish==12869 (pieces in 8-15) leave a
-         * 3-color mix in positions 16-23, which causes getrl() to underflow r. */
+        /* finish==735470: pieces at RL positions 16-23 — only then is getrl() valid.
+         * Other class-0 values (0, 12869) leave a 3-color mix there, underflowing r. */
         if (finish[sym] == 735470 && p1_found < p1_max) {
             fullcube_copy(&p1_out[p1_found], fc);
             p1_out[p1_found].length1 = depth;
             p1_found++;
         }
-        return;  /* always stop at class 0 */
+        return;
     }
 
     if (depth == bound) return;
 
     for (int m = 0; m < 36; m++) {
         if (prev_move < 36 && ckmv[prev_move][m]) {
-            m = skipAxis[m] - 1;
+            m = skip_axis[m] - 1;
             continue;
         }
         int sm        = symmove[sym][m];         /* conjugate m by accumulated sym */
@@ -71,7 +58,7 @@ static void search1_ida(FullCube *fc, int depth, int bound,
 
         fullcube_move(fc, m);
         search1_ida(fc, depth+1, bound, new_coord, new_sym, m);
-        fc->moveLength--;
+        fc->move_length--;
         if (p1_found >= p1_max) return;
     }
 }
@@ -83,9 +70,7 @@ int search1(const FullCube *state, FullCube *out, int max_out) {
 
     CenterCube *ct = fullcube_get_center((FullCube *)state);
 
-    /* Compute starting (coord, sym, prun) for all three axes.
-     * urf=0: UD axis (color%3==0), urf=1: RL axis, urf=2: FB axis.
-     * Search order: FB(2), UD(0), RL(1). */
+    /* Try all 3 axes at increasing IDA* bounds; FB(2) first. */
     static const int axis_order[3] = {2, 0, 1};
     int coords[3], syms[3], pruns[3];
     for (int urf = 0; urf < 3; urf++) {
@@ -129,10 +114,10 @@ static void search2_ida(FullCube *fc, int depth, int bound,
 
     if (center2_is_solved(rl, ct_coord) && p2_found < p2_max) {
         /* Gate: edges must be paired before entering Phase 3.
-         * Apply buffered moves to a throwaway copy to avoid corrupting edgeAvail. */
+         * Apply buffered moves to a throwaway copy to avoid corrupting edge_avail. */
         EdgeCube tmp_edge = fc->edge;
-        for (int j = fc->edgeAvail; j < fc->moveLength; j++)
-            edge_cube_move(&tmp_edge, fc->moveBuffer[j]);
+        for (int j = fc->edge_avail; j < fc->move_length; j++)
+            edge_cube_move(&tmp_edge, fc->move_buffer[j]);
         if (!edge_cube_check(&tmp_edge)) return;
         fullcube_copy(&p2_out[p2_found], fc);
         p2_out[p2_found].length2 = depth;
@@ -142,12 +127,10 @@ static void search2_ida(FullCube *fc, int depth, int bound,
 
     if (depth == bound) return;
 
-    /* Use the same 23-move set that the pruning BFS was built with.
-     * The 5 excluded moves (Dwx2, Lwx1, Lwx2, Lwx3, Bwx2) would expand the tree
-     * without improving pruning effectiveness. */
+    /* 23-move set matching the pruning BFS (excludes Dwx2, Lwx1–3, Bwx2). */
     for (int mi = 0; mi < 23; mi++) {
         if (prev_move < 23 && ckmv2[prev_move][mi]) {
-            mi = skipAxis2[mi] - 1;
+            mi = skip_axis2[mi] - 1;
             continue;
         }
         int m   = move2std[mi];
@@ -155,12 +138,11 @@ static void search2_ida(FullCube *fc, int depth, int bound,
         int nct = ctmv[ct_coord][mi];
         fullcube_move(fc, m);
         search2_ida(fc, depth+1, bound, nrl, nct, mi);
-        fc->moveLength--;
+        fc->move_length--;
         if (p2_found >= p2_max) return;
     }
 }
 
-/* Candidate record used to sort Phase-1 results before Phase-2 search. */
 typedef struct { int score; int rl; int ct; int idx; } P2Cand;
 
 int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
@@ -168,9 +150,7 @@ int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
     p2_out   = out;
     p2_max   = max_out;
 
-    /* Pre-score every Phase-1 result by length1 + Phase-2 lower bound.
-     * Processing cheapest-first means IDA* hits short solutions early and
-     * the p2_found >= p2_max guard exits before touching expensive states. */
+    /* Sort cheapest-first so IDA* hits short solutions before the beam cap. */
     P2Cand cands[SEARCH_BEAM1_MAX];
     for (int i = 0; i < n1; i++) {
         FullCube fc;
@@ -194,7 +174,6 @@ int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
         cands[i].idx   = i;
     }
 
-    /* Insertion sort ascending by score (n1 ≤ SEARCH_BEAM1_MAX = 500). */
     for (int i = 1; i < n1; i++) {
         P2Cand tmp = cands[i];
         int j = i - 1;
@@ -240,28 +219,20 @@ static FullCube p3_result;
 
 static Edge3State tempe[21];
 
-/*
- * search3_ida -- IDA* over (Center3 × Edge3) joint coordinate.
- *
- * edge_coord = symcord1 * N_RAW + cord2 (sym-reduced, used for pruning and
- * goal detection).  tempe[depth] holds the current std-normalised Edge3State,
- * populated by the caller before each invocation (root: copied from es0;
- * recursive levels: memcpy + edge3_move + edge3_std from parent).
- *
- * Fix 1: tempe is maintained incrementally — no set_from_int per node.
- * Fix 2: cord1x uses getmvrot(end=4) instead of end=10, saving 6 Lehmer iters.
- * Fix 3: both center3 and edge3 heuristics are checked at function entry.
- */
+/* IDA* over (Center3 × Edge3). edge_coord = symcord1*N_RAW+cord2 (sym-reduced).
+ * tempe[depth] is the std-normalised Edge3State, seeded by the caller. */
 static void search3_ida(FullCube *fc, int depth, int bound,
                           int ct, int edge_coord, int prun, int prev_move) {
     int h_c = c3prun[ct];
     if (h_c > bound - depth) return;
 
-    int h_e = edge3_getprun(edge_coord);   /* Fix 3 */
+    int h_e = edge3_getprun(edge_coord);
     if (h_e > bound - depth) return;
 
     if (ct == 0 && edge_coord == 0) {
-        fullcube_copy(&p3_result, fc);
+        FullCube tmp;
+        fullcube_copy(&tmp, fc);
+        fullcube_copy(&p3_result, &tmp);
         p3_result.length3 = depth;
         p3_done = 1;
         return;
@@ -276,7 +247,7 @@ static void search3_ida(FullCube *fc, int depth, int bound,
 
     for (int mi = 0; mi < 17; mi++) {
         if (prev_move < 20 && ckmv3[prev_move][mi]) {
-            mi = skipAxis3[mi] - 1;
+            mi = skip_axis3[mi] - 1;
             continue;
         }
         int m    = move3std[mi];
@@ -284,11 +255,10 @@ static void search3_ida(FullCube *fc, int depth, int bound,
 
         int h_c2 = c3prun[nct];
         if (h_c2 > remaining) {
-            if (h_c2 > remaining + 1 && mi < 14) mi = skipAxis3[mi] - 1;
+            if (h_c2 > remaining + 1 && mi < 14) mi = skip_axis3[mi] - 1;
             continue;
         }
 
-        /* Fix 2: cord1x needs only end=4 (P(12,4) range); saves 6 Lehmer iters. */
         int cord1x         = edge3_getmvrot(tempe[depth].edge, mi * 8, 4);
         int sym_raw        = e3raw2sym[cord1x];
         int symx           = sym_raw & 7;
@@ -298,18 +268,17 @@ static void search3_ida(FullCube *fc, int depth, int bound,
 
         int h_e2 = edge3_getprun(new_edge_coord);
         if (h_e2 > remaining) {
-            if (h_e2 > remaining + 1 && mi < 14) mi = skipAxis3[mi] - 1;
+            if (h_e2 > remaining + 1 && mi < 14) mi = skip_axis3[mi] - 1;
             continue;
         }
 
-        /* Fix 1: build child edge state incrementally from parent. */
         memcpy(&tempe[depth + 1], &tempe[depth], sizeof(Edge3State));
         edge3_move(&tempe[depth + 1], mi);
         edge3_std(&tempe[depth + 1]);
 
         fullcube_move(fc, m);
         search3_ida(fc, depth + 1, bound, nct, new_edge_coord, child_prun, mi);
-        fc->moveLength--;
+        fc->move_length--;
         if (p3_done) return;
     }
 }
@@ -318,21 +287,16 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
     p3_done = 0;
     if (n2 == 0) return 0;
 
-    /* ------------------------------------------------------------------
-     * Precompute P3 coordinates and heuristics for every P2 candidate,
-     * then sort by (total_base + max(h_c, h_e)) ascending.
-     * Joint IDA* then tries all candidates in increasing total-bound
-     * order, in increasing total-bound order.
-     * ------------------------------------------------------------------ */
+    /* Precompute P3 coordinates and heuristics; sort by min_total ascending. */
     typedef struct {
         int        p2_idx;
         int        ct;
-        Edge3State es0;        /* std-normalised starting state (pre-sym-rotation) */
-        int        edge_coord; /* sym-reduced coordinate for pruning and goal check */
-        int        h_c;        /* exact center3 heuristic */
-        int        h_e;        /* edge lower-bound: exact depth or 10 if unseen */
-        int        total_base; /* length1 + length2 */
-        int        min_total;  /* total_base + max(h_c, h_e) */
+        Edge3State es0;        /* std-normalised, pre-sym-rotation */
+        int        edge_coord; /* sym-reduced */
+        int        h_c;
+        int        h_e;        /* 10 if unseen in BFS */
+        int        total_base;
+        int        min_total;
     } P3Cand;
 
     P3Cand cands[SEARCH_BEAM2_MAX];
@@ -343,13 +307,11 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
         fullcube_copy(&fc, &p2[i]);
         CenterCube *cc = fullcube_get_center(&fc);
         EdgeCube   *ec = fullcube_get_edge(&fc);
-
-        int epar = (int)parity_u8(ec->ep, 24);
+        CornerCube  *cor = fullcube_get_corner(&fc);
+        Edge3State   es;
+        int epar = edge3_set_from_edgecube(&es, ec->ep) ^ corner_cube_parity(cor);
         Center3State c3s;
         center3_set(&c3s, cc->ct, epar);
-
-        Edge3State es;
-        edge3_set_from_edgecube(&es, ec->ep);
         edge3_std(&es);
 
         /* Sym-reduce to get edge_coord for pruning; keep es intact as es0. */
@@ -357,7 +319,8 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
         int sym_raw  = e3raw2sym[cord1];
         int symx     = sym_raw & 7;
         int symcord1 = sym_raw >> 3;
-        Edge3State es_rot = es;         /* rotate a copy; es stays as the start state */
+
+        Edge3State es_rot = es;
         edge3_rotate(&es_rot, symx);
         edge3_std(&es_rot);
         int cord2_sym  = edge3_get(&es_rot, 10) % EDGE3_RAW_PERMS;
@@ -380,7 +343,6 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
         nc++;
     }
 
-    /* Insertion-sort ascending by min_total. */
     for (int i = 1; i < nc; i++) {
         P3Cand tmp = cands[i];
         int j = i - 1;
@@ -390,9 +352,7 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
         cands[j+1] = tmp;
     }
 
-    /* Joint IDA*: outer loop = total (P1+P2+P3) bound, inner = candidates.
-     * At each total, each candidate runs IDA* at p3_bound = total-total_base.
-     * Because candidates are sorted, once min_total > total we can break. */
+    /* Joint IDA*: p3_bound = total - total_base; sorted order enables early break. */
     int total_min = cands[0].min_total;
     for (int total = total_min; total <= 100 && !p3_done; total++) {
         for (int ci = 0; ci < nc && !p3_done; ci++) {
@@ -400,11 +360,11 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
             if (c->min_total > total) break;   /* sorted: rest are also > total */
             int p3_bound = total - c->total_base;
             if (p3_bound > 20) continue;       /* hard cap on P3 length */
-            if (c->h_c > p3_bound) continue;  /* center heuristic prunes this bound */
+            if (c->h_c > p3_bound) continue;
 
             FullCube fc;
             fullcube_copy(&fc, &p2[c->p2_idx]);
-            tempe[0] = c->es0;   /* seed incremental edge state for depth 0 */
+            tempe[0] = c->es0;
             search3_ida(&fc, 0, p3_bound, c->ct, c->edge_coord, p3_bound % 3, 20);
         }
     }
@@ -419,8 +379,8 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
 
 int get_move_string(const FullCube *result, char *buf, int buf_len) {
     int pos = 0, n = 0;
-    for (int i = 0; i < result->moveLength && pos < buf_len - 4; i++) {
-        int m = result->moveBuffer[i];
+    for (int i = 0; i < result->move_length && pos < buf_len - 4; i++) {
+        int m = result->move_buffer[i];
         int written = snprintf(buf + pos, (size_t)(buf_len - pos),
                                "%s ", move2str[m]);
         if (written > 0) pos += written;
@@ -428,6 +388,55 @@ int get_move_string(const FullCube *result, char *buf, int buf_len) {
     }
     if (pos > 0 && buf[pos-1] == ' ') buf[--pos] = '\0';
     return n;
+}
+
+/* -------------------------------------------------------------------------
+ * Orientation normalization
+ *
+ * After Phase 3 the cube may be in any of 24 rotational orientations.
+ * Apply at most two single-axis rotations to put color 0 on U and color 2 on F.
+ * ------------------------------------------------------------------------- */
+void normalize_orientation(FullCube *fc) {
+    /*
+     * face_cg[i]: ct[] index for face i, matching fullcube_to_333_facelet's
+     * center_group table.
+     */
+    static const int face_cg[6] = {0, 16, 8, 4, 20, 12};
+
+    CenterCube *cen = fullcube_get_center(fc);
+    int col[6];
+    for (int i = 0; i < 6; i++) col[i] = cen->ct[face_cg[i]];
+
+    /* Flush lazy buffering */
+    fullcube_get_edge(fc);
+    fullcube_get_corner(fc);
+
+    /* x/z-rot to get white top */
+    int u = 0;
+    for (int i = 0; i < 6; i++) if (col[i] == 0) { u = i; break; }
+
+    switch (u) {
+        case 0: break;
+        case 1: fullcube_do_alg(fc, (int[]){Fwx3, Bwx1}, 2); break; /* z' */
+        case 2: fullcube_do_alg(fc, (int[]){Rwx1, Lwx3}, 2); break; /* x' */
+        case 3: fullcube_do_alg(fc, (int[]){Rwx2, Lwx2}, 2); break; /* x2 */
+        case 4: fullcube_do_alg(fc, (int[]){Fwx1, Bwx3}, 2); break; /* z  */
+        case 5: fullcube_do_alg(fc, (int[]){Rwx3, Lwx1}, 2); break; /* x  */
+    }
+
+    /* y-rot to get green front */
+    cen = fullcube_get_center(fc);
+    for (int i = 0; i < 6; i++) col[i] = cen->ct[face_cg[i]];
+
+    int f = 2;
+    for (int i = 0; i < 6; i++) if (col[i] == 2) { f = i; break; }
+
+    switch (f) {
+        case 2: break;
+        case 1: fullcube_do_alg(fc, (int[]){Uwx1, Dwx3}, 2); break; /* y  */
+        case 4: fullcube_do_alg(fc, (int[]){Uwx3, Dwx1}, 2); break; /* y' */
+        case 5: fullcube_do_alg(fc, (int[]){Uwx2, Dwx2}, 2); break; /* y2 */
+    }
 }
 
 /* -------------------------------------------------------------------------
@@ -459,7 +468,29 @@ int tpr_solve(const char *facelet96, char *buf, int buf_len) {
     FullCube result;
     if (!search3(beam2, n2, &result)) return -1;
 
-    /* TODO: call min2phase on result to finish the 3×3 reduction. */
+    normalize_orientation(&result);
 
-    return get_move_string(&result, buf, buf_len);
+    int n = get_move_string(&result, buf, buf_len);
+
+    char facelet54[55];
+    fullcube_to_333_facelet(&result, facelet54);
+
+    static const int center_pos[6] = {4, 13, 22, 31, 40, 49};
+    static const char expected[6] = "URFDLB";
+    char cmap[128] = {0};
+    for (int i = 0; i < 6; i++)
+        cmap[(unsigned char)facelet54[center_pos[i]]] = expected[i];
+    for (int i = 0; i < 54; i++)
+        facelet54[i] = cmap[(unsigned char)facelet54[i]];
+
+    char *sol_333 = solution(facelet54, 20, 1000, 0,
+        "../4x4-solver/ckociemba/cprunetables");
+
+    if (sol_333) {
+        int pos = (int)strlen(buf);
+        if (pos > 0 && pos < buf_len - 1) buf[pos++] = ' ';
+        snprintf(buf + pos, (size_t)(buf_len - pos), "%s", sol_333);
+        free(sol_333);
+    }
+    return n;
 }

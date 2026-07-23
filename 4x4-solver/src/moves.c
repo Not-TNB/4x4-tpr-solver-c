@@ -56,14 +56,12 @@ bool ckmv [37][36];
 bool ckmv2[29][28];
 bool ckmv3[21][20];
 
-int skipAxis [36];
-int skipAxis2[28];
-int skipAxis3[20];
+int skip_axis [36];
+int skip_axis2[28];
+int skip_axis3[20];
 
-/* Return the face axis (0..5) for standard move index m (0..35). */
 static int move_axis(int m) { return m / 3; }
 
-/* Two axes are "opposite" if they differ by 3 (U-D, R-L, F-B). */
 static bool opposite_axes(int a, int b) { return (a < 6 && b < 6 && (a-b==3 || b-a==3)); }
 
 static void build_ckmv_for_set(bool *table,        /* [N+1][N] flattened */
@@ -71,7 +69,6 @@ static void build_ckmv_for_set(bool *table,        /* [N+1][N] flattened */
                                 int   N,
                                 int  *skip_out)
 {
-    /* table is (N+1) × N, row-major, caller passes flattened pointer. */
     bool (*T)[N] = (bool (*)[N])table;  /* VLA pointer trick */
 
     /* Sentinel row N: no prev move -> nothing is redundant. */
@@ -81,14 +78,14 @@ static void build_ckmv_for_set(bool *table,        /* [N+1][N] flattened */
         int pa = move_axis(move_set[prev]);
         for (int cur = 0; cur < N; cur++) {
             int ca = move_axis(move_set[cur]);
-            /* Redundant if same face, or same-axis commuting pair out of order. */
+            /* Redundant: same face, or commuting opposite-axis pair out of order. */
             bool same = (pa == ca);
             bool comm = (opposite_axes(pa, ca) && pa > ca);
             T[prev][cur] = same || comm;
         }
     }
 
-    /* skipAxis[m]: next index to try after detecting a redundancy on axis of m. */
+    /* First index past the current axis — jump here on redundancy. */
     for (int m = 0; m < N; m++) {
         int axis = move_axis(move_set[m]);
         int skip = m;
@@ -98,21 +95,18 @@ static void build_ckmv_for_set(bool *table,        /* [N+1][N] flattened */
 }
 
 void moves_init(void) {
-    /* Build reverse maps. */
     memset(std2move, -1, sizeof(std2move));
     memset(std3move, -1, sizeof(std3move));
     for (int i = 0; move2std[i] != EOM; i++) std2move[move2std[i]] = i;
     for (int i = 0; move3std[i] != EOM; i++) std3move[move3std[i]] = i;
 
-    /* Count phase set sizes. */
     int N2 = 0; while (move2std[N2] != EOM) N2++;
     int N3 = 0; while (move3std[N3] != EOM) N3++;
 
-    /* Phase 1: all 36 moves. */
     int all36[37];
     for (int i = 0; i < 36; i++) all36[i] = i;
     all36[36] = EOM;
-    build_ckmv_for_set((bool *)ckmv,  all36,    36, skipAxis);
-    build_ckmv_for_set((bool *)ckmv2, move2std, N2, skipAxis2);
-    build_ckmv_for_set((bool *)ckmv3, move3std, N3, skipAxis3);
+    build_ckmv_for_set((bool *)ckmv,  all36,    36, skip_axis);
+    build_ckmv_for_set((bool *)ckmv2, move2std, N2, skip_axis2);
+    build_ckmv_for_set((bool *)ckmv3, move3std, N3, skip_axis3);
 }

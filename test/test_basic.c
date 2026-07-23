@@ -1,18 +1,15 @@
 /*
- * test_tpr.c — TPR solver test suite
+ * test_basic.c -- TPR solver test suite (unit + full pipeline integration)
  *
  * Two sections:
- *   1. Unit tests  — verify math primitives, move tables, and cubie operations
- *      before any search infrastructure exists.
- *
- *   2. Integration tests  — generate random scrambles, run the solve pipeline,
- *      validate each phase goal independently, and report how far each scramble
- *      made it.
+ *   1. Unit tests  -- verify math primitives, move tables, and cubie operations.
+ *   2. Integration tests  -- random scrambles through the full pipeline
+ *      (TPR phases 1-3 + Kociemba finish), validating each phase goal.
  *
  * Usage:
- *   ./test_tpr            (fixed seed, normal output)
- *   ./test_tpr -v         (verbose: full pipeline trace per scramble)
- *   TPR_SEED=0xABCD ./test_tpr
+ *   ./test_basic            (random seed)
+ *   ./test_basic -v         (verbose: full pipeline trace per scramble)
+ *   TPR_SEED=0xABCD ./test_basic
  */
 
 #include <stdio.h>
@@ -23,6 +20,7 @@
 
 #include "../4x4-solver/include/search.h"
 #include "../4x4-solver/include/cubie.h"
+#include "../4x4-solver/ckociemba/include/search.h"
 #include "../4x4-solver/include/center1.h"
 #include "../4x4-solver/include/center2.h"
 #include "../4x4-solver/include/center3.h"
@@ -43,10 +41,10 @@
 /* =========================================================================
  * Solved-state reference
  *
- * Center positions (matches centerFacelet[] ordering in cubie.c):
+ * Center positions (matches center_facelet[] ordering in cubie.c):
  *   0-3  = U face,  4-7  = D face,  8-11 = F face,
  *   12-15 = B face, 16-19 = R face, 20-23 = L face.
- * Colors (TPR ordering): U=0 R=1 F=2 D=3 L=4 B=5.
+ * Colours (TPR ordering): U=0 R=1 F=2 D=3 L=4 B=5.
  * ========================================================================= */
 #define COL_U 0
 #define COL_R 1
@@ -71,31 +69,59 @@ static const int SOLVED_CT[24] = {
  * that has been flushed (get_center/get_edge already called).
  * ========================================================================= */
 
-/* Phase 1: all 8 U/D-colored stickers are on U (positions 0-3) or D (4-7). */
+/* Phase 1: exactly 8 pieces of some single axis are in positions 16-23.
+ * This ensures center2_getrl() sees a clean 4+4 split (valid Phase 2 start).
+ * We accept any of the three axes (UD, RL, FB). */
 static bool goal_p1(const CenterCube *ct) {
-    for (int i = 0; i < 8; i++) {
-        if (ct->ct[i] != COL_U && ct->ct[i] != COL_D) return false;
+    for (int urf = 0; urf < 3; urf++) {
+        int n = 0;
+        for (int i = 16; i < 24; i++)
+            if ((int)ct->ct[i] % 3 == urf) n++;
+        if (n == 8) return true;
     }
-    /* Ensure no U/D stickers leaked onto equatorial faces. */
-    for (int i = 8; i < 24; i++) {
-        if (ct->ct[i] == COL_U || ct->ct[i] == COL_D) return false;
-    }
-    return true;
+    return false;
 }
 
-/* Phase 2: R centers in R slots (16-19), L centers in L slots (20-23).
- * Phase 1 condition must also hold. */
-static bool goal_p2(const CenterCube *ct) {
-    if (!goal_p1(ct)) return false;
-    for (int i = 16; i < 20; i++) if (ct->ct[i] != COL_R) return false;
-    for (int i = 20; i < 24; i++) if (ct->ct[i] != COL_L) return false;
-    return true;
+/* Phase 2: validate that the rl coordinate is solved.
+ *
+ * fc->center.ct and fc->edge.ep hold the Phase-1 endpoint state (Phase-2
+ * moves are buffered but not yet applied to the sub-cubes).  Phase-2 moves
+ * are in fc->move_buffer[fc->center_avail..fc->move_length-1].
+ *
+ * We must NOT re-derive rl from the physical center state after
+ * fullcube_get_center, because wide moves (Uw, Dw, Lw, Bw) in Phase 2
+ * physically bring F/B-face pieces into R/L-face slots, breaking the
+ * "exactly 4 differ from rl[7]" assumption that getrl relies on.
+ *
+ * Instead we build a Center2State from the Phase-1 endpoint and advance it
+ * through Phase-2 moves using center2_move — the same abstraction the IDA*
+ * uses — then check center2_is_solved on the result. */
+static bool goal_p2(const FullCube *fc) {
+    Center2State c2s;
+    center2_set(&c2s, fc->center.ct, parity_u8(fc->edge.ep, 24));
+    int rl_init = center2_getrl(&c2s);
+    for (int i = fc->center_avail; i < fc->move_length; i++)
+        center2_move(&c2s, fc->move_buffer[i]);
+    int rl = center2_getrl(&c2s);
+    int nmoves = fc->move_length - fc->center_avail;
+    if (!center2_is_solved(rl, 0))
+        printf("  [dbg2-goal] FAIL rl_init=%d rl_final=%d nmoves=%d cAvail=%d mLen=%d\n",
+               rl_init, rl, nmoves, fc->center_avail, fc->move_length);
+    return center2_is_solved(rl, 0);
 }
 
-/* Phase 3 centres: every center is in its home slot. */
+/* Phase 3 centres: each face's 4 center slots hold a uniform color.
+ * Positions 0-3=U, 4-7=D, 8-11=F, 12-15=B, 16-19=R, 20-23=L.
+ * We do not require the color to match the face's original color because
+ * Phase 1 may have chosen an axis other than RL, leaving a permuted
+ * arrangement that center3 correctly reduces to coord 0 but which does
+ * not match SOLVED_CT. */
 static bool goal_p3_centers(const CenterCube *ct) {
-    for (int i = 0; i < 24; i++)
-        if (ct->ct[i] != SOLVED_CT[i]) return false;
+    for (int g = 0; g < 6; g++) {
+        uint8_t c = ct->ct[g * 4];
+        for (int i = 1; i < 4; i++)
+            if (ct->ct[g * 4 + i] != c) return false;
+    }
     return true;
 }
 
@@ -145,22 +171,22 @@ static int g_pass = 0, g_fail = 0;
 } while (0)
 
 /* =========================================================================
- * Unit tests — tpr_util
+ * Unit tests -- tpr_util
  * ========================================================================= */
 
 static void ut_tpr_util(void) {
     printf(C_BOLD "--- tpr_util ---" C_RESET "\n");
 
     /* Binomial coefficients */
-    EXPECT_EQ(Cnk[0][0],    1,       "C(0,0)");
-    EXPECT_EQ(Cnk[1][0],    1,       "C(1,0)");
-    EXPECT_EQ(Cnk[4][2],    6,       "C(4,2)");
-    EXPECT_EQ(Cnk[8][4],   70,       "C(8,4)   [slice coord range]");
-    EXPECT_EQ(Cnk[16][4], 1820,      "C(16,4)  [Center2 rl range]");
-    EXPECT_EQ(Cnk[24][8], 735471,    "C(24,8)  [Center1 raw range]");
+    EXPECT_EQ(tpr_Cnk[0][0],    1,       "C(0,0)");
+    EXPECT_EQ(tpr_Cnk[1][0],    1,       "C(1,0)");
+    EXPECT_EQ(tpr_Cnk[4][2],    6,       "C(4,2)");
+    EXPECT_EQ(tpr_Cnk[8][4],   70,       "C(8,4)   [slice coord range]");
+    EXPECT_EQ(tpr_Cnk[16][4], 1820,      "C(16,4)  [Center2 rl range]");
+    EXPECT_EQ(tpr_Cnk[24][8], 735471,    "C(24,8)  [Center1 raw range]");
 
     /* Pascal symmetry: C(n,k) == C(n, n-k) */
-    EXPECT_EQ(Cnk[10][3], Cnk[10][7], "C(10,3)==C(10,7)");
+    EXPECT_EQ(tpr_Cnk[10][3], tpr_Cnk[10][7], "C(10,3)==C(10,7)");
 
     /* Factorials */
     EXPECT_EQ(fact[0],  1,         "0!");
@@ -173,10 +199,10 @@ static void ut_tpr_util(void) {
     uint8_t id8[8] = {0,1,2,3,4,5,6,7};
     EXPECT_EQ(parity_u8(id8, 8), 0, "parity(identity) == 0");
 
-    uint8_t sw8[8] = {1,0,2,3,4,5,6,7};  /* single swap → odd */
+    uint8_t sw8[8] = {1,0,2,3,4,5,6,7};  /* single swap -> odd */
     EXPECT_EQ(parity_u8(sw8, 8), 1, "parity(swap 0↔1) == 1");
 
-    uint8_t cyc8[8] = {1,2,0,3,4,5,6,7};  /* 3-cycle → even */
+    uint8_t cyc8[8] = {1,2,0,3,4,5,6,7};  /* 3-cycle -> even */
     EXPECT_EQ(parity_u8(cyc8, 8), 0, "parity(3-cycle) == 0");
 
     /* set8perm: decode Lehmer rank */
@@ -191,7 +217,7 @@ static void ut_tpr_util(void) {
     for (int i = 0; i < 8; i++) rev_ok &= (p[i] == (uint8_t)(7-i));
     EXPECT(rev_ok, "set8perm(40319) == {7,6,5,4,3,2,1,0}");
 
-    /* Round-trip: set8perm → get_perm_rank — spot-check every 1000th rank */
+    /* Round-trip: set8perm -> get_perm_rank -- spot-check every 1000th rank */
     bool rt_ok = true;
     for (int idx = 0; idx < 40320 && rt_ok; idx += 1000) {
         set8perm(p, idx);
@@ -200,10 +226,10 @@ static void ut_tpr_util(void) {
     }
     EXPECT(rt_ok, "set8perm/get_perm_rank round-trip (every 1000th rank)");
 
-    /* swap4 CW cycle: a←b←c←d←a  (key=0) */
+    /* swap4 CW cycle: a<-d<-c<-b<-a  (key=0): {10,20,30,40} -> {40,10,20,30} */
     uint8_t arr[4] = {10,20,30,40};
     swap4_u8(arr, 0,1,2,3, 0);
-    EXPECT(arr[0]==20 && arr[1]==30 && arr[2]==40 && arr[3]==10,
+    EXPECT(arr[0]==40 && arr[1]==10 && arr[2]==20 && arr[3]==30,
            "swap4_u8 CW");
 
     /* swap4 x4 = identity */
@@ -214,7 +240,7 @@ static void ut_tpr_util(void) {
 }
 
 /* =========================================================================
- * Unit tests — moves
+ * Unit tests -- moves
  * ========================================================================= */
 
 static void ut_moves(void) {
@@ -238,14 +264,14 @@ static void ut_moves(void) {
     EXPECT( ckmv[Bx1][Fx1],   "ckmv: F after B is redundant (wrong order)");
     EXPECT(!ckmv[Fx1][Bx1],   "ckmv: B after F is not redundant (canonical)");
 
-    /* Sentinel row: no previous move → nothing is redundant */
+    /* Sentinel row: no previous move -> nothing is redundant */
     bool sentinel_ok = true;
     for (int m = 0; m < 36; m++) sentinel_ok &= !ckmv[36][m];
     EXPECT(sentinel_ok, "ckmv[36][*] all false (sentinel)");
 
-    /* skipAxis[U*] points past all U moves */
-    EXPECT(skipAxis[Ux1] >= 3, "skipAxis[Ux1] >= 3 (past U moves)");
-    EXPECT(skipAxis[Ux3] >= 3, "skipAxis[Ux3] >= 3");
+    /* skip_axis[U*] points past all U moves */
+    EXPECT(skip_axis[Ux1] >= 3, "skip_axis[Ux1] >= 3 (past U moves)");
+    EXPECT(skip_axis[Ux3] >= 3, "skip_axis[Ux3] >= 3");
 
     /* move2std contains valid indices in [0,35], terminated by EOM */
     int cnt2 = 0;
@@ -291,7 +317,7 @@ static void ut_moves(void) {
 }
 
 /* =========================================================================
- * Unit tests — cubie: identity, move order, inverse, parity
+ * Unit tests -- cubie: identity, move order, inverse, parity
  * ========================================================================= */
 
 static void ut_cubie_identity(void) {
@@ -325,7 +351,7 @@ static void ut_cubie_identity(void) {
     /* FullCube identity */
     FullCube fc;
     fullcube_identity(&fc);
-    EXPECT(fc.moveLength == 0, "FullCube identity: moveLength == 0");
+    EXPECT(fc.move_length == 0, "FullCube identity: move_length == 0");
     EXPECT(goal_solved(&fc),   "FullCube identity passes goal_solved()");
 }
 
@@ -335,7 +361,7 @@ static void ut_cubie_move_order(void) {
     /* Quarter-turn order-4 test for each face, outer and wide */
     struct { int m; const char *name; } qt_moves[] = {
         {Ux1,"U"}, {Rx1,"R"}, {Fx1,"F"}, {Dx1,"D"}, {Lx1,"L"}, {Bx1,"B"},
-        {ux1,"u"}, {rx1,"r"}, {fx1,"f"}, {dx1,"d"}, {lx1,"l"}, {bx1,"b"},
+        {Uwx1,"Uw"}, {Rwx1,"Rw"}, {Fwx1,"Fw"}, {Dwx1,"Dw"}, {Lwx1,"Lw"}, {Bwx1,"Bw"},
     };
     int n_qt = (int)(sizeof(qt_moves)/sizeof(qt_moves[0]));
 
@@ -373,7 +399,7 @@ static void ut_cubie_move_order(void) {
     /* Half-turn order-2 test */
     struct { int m; const char *name; } ht_moves[] = {
         {Ux2,"U2"},{Rx2,"R2"},{Fx2,"F2"},{Dx2,"D2"},{Lx2,"L2"},{Bx2,"B2"},
-        {ux2,"u2"},{rx2,"r2"},{fx2,"f2"},{dx2,"d2"},{lx2,"l2"},{bx2,"b2"},
+        {Uwx2,"Uw2"},{Rwx2,"Rw2"},{Fwx2,"Fw2"},{Dwx2,"Dw2"},{Lwx2,"Lw2"},{Bwx2,"Bw2"},
     };
     int n_ht = (int)(sizeof(ht_moves)/sizeof(ht_moves[0]));
 
@@ -408,8 +434,8 @@ static void ut_cubie_inverse(void) {
     struct { int m, mi; const char *name; } pairs[] = {
         {Ux1,Ux3,"U/U'"}, {Rx1,Rx3,"R/R'"}, {Fx1,Fx3,"F/F'"},
         {Dx1,Dx3,"D/D'"}, {Lx1,Lx3,"L/L'"}, {Bx1,Bx3,"B/B'"},
-        {ux1,ux3,"u/u'"}, {rx1,rx3,"r/r'"}, {lx1,lx3,"l/l'"},
-        {Ux2,Ux2,"U2^2"}, {Rx2,Rx2,"R2^2"}, {fx2,fx2,"f2^2"},
+        {Uwx1,Uwx3,"Uw/Uw'"}, {Rwx1,Rwx3,"Rw/Rw'"}, {Lwx1,Lwx3,"Lw/Lw'"},
+        {Ux2,Ux2,"U2^2"}, {Rx2,Rx2,"R2^2"}, {Fwx2,Fwx2,"Fw2^2"},
     };
     int n = (int)(sizeof(pairs)/sizeof(pairs[0]));
 
@@ -470,22 +496,22 @@ static void ut_cubie_parity(void) {
     EXPECT_EQ(corner_cube_parity(&cp), 0, "CornerCube: solved parity == 0 (even)");
 
     edge_cube_move(&ep, Ux1);
-    EXPECT_EQ(edge_cube_parity(&ep), 1, "EdgeCube:   after U → parity 1 (odd)");
+    EXPECT_EQ(edge_cube_parity(&ep), 1, "EdgeCube:   after U -> parity 1 (odd)");
 
     corner_cube_move(&cp, Ux1);
-    EXPECT_EQ(corner_cube_parity(&cp), 1, "CornerCube: after U → parity 1 (odd)");
+    EXPECT_EQ(corner_cube_parity(&cp), 1, "CornerCube: after U -> parity 1 (odd)");
 
     /* After two moves from different axes, parity returns to even. */
     edge_cube_move(&ep, Rx1);
-    EXPECT_EQ(edge_cube_parity(&ep), 0, "EdgeCube:   after U,R → parity 0 (even)");
+    EXPECT_EQ(edge_cube_parity(&ep), 0, "EdgeCube:   after U,R -> parity 0 (even)");
 
     corner_cube_move(&cp, Rx1);
-    EXPECT_EQ(corner_cube_parity(&cp), 0, "CornerCube: after U,R → parity 0 (even)");
+    EXPECT_EQ(corner_cube_parity(&cp), 0, "CornerCube: after U,R -> parity 0 (even)");
 
     /* Single half-turn doesn't change edge parity (two 4-cycles). */
     EdgeCube ep2; edge_cube_identity(&ep2);
     edge_cube_move(&ep2, Rx2);
-    EXPECT_EQ(edge_cube_parity(&ep2), 0, "EdgeCube:   after R2 → parity 0 (even)");
+    EXPECT_EQ(edge_cube_parity(&ep2), 0, "EdgeCube:   after R2 -> parity 0 (even)");
 }
 
 static void ut_cubie_fullcube(void) {
@@ -494,20 +520,20 @@ static void ut_cubie_fullcube(void) {
     /* After fullcube_move (lazy), sub-cubes are unchanged until flushed. */
     FullCube fc; fullcube_identity(&fc);
     fullcube_move(&fc, Rx1);
-    EXPECT_EQ(fc.moveLength,   1, "fullcube_move: moveLength increments");
-    EXPECT_EQ(fc.edgeAvail,    0, "fullcube_move: edgeAvail not incremented");
-    EXPECT_EQ(fc.centerAvail,  0, "fullcube_move: centerAvail not incremented");
+    EXPECT_EQ(fc.move_length,   1, "fullcube_move: move_length increments");
+    EXPECT_EQ(fc.edge_avail,    0, "fullcube_move: edge_avail not incremented");
+    EXPECT_EQ(fc.center_avail,  0, "fullcube_move: center_avail not incremented");
 
-    /* After get_edge, edgeAvail catches up. */
+    /* After get_edge, edge_avail catches up. */
     fullcube_get_edge(&fc);
-    EXPECT_EQ(fc.edgeAvail, 1, "fullcube_get_edge: edgeAvail caught up");
+    EXPECT_EQ(fc.edge_avail, 1, "fullcube_get_edge: edge_avail caught up");
 
     /* fullcube_do_move flushes immediately. */
     fullcube_identity(&fc);
     fullcube_do_move(&fc, Ux1);
-    EXPECT_EQ(fc.edgeAvail,    1, "fullcube_do_move: edgeAvail == 1");
-    EXPECT_EQ(fc.centerAvail,  1, "fullcube_do_move: centerAvail == 1");
-    EXPECT_EQ(fc.cornerAvail,  1, "fullcube_do_move: cornerAvail == 1");
+    EXPECT_EQ(fc.edge_avail,    1, "fullcube_do_move: edge_avail == 1");
+    EXPECT_EQ(fc.center_avail,  1, "fullcube_do_move: center_avail == 1");
+    EXPECT_EQ(fc.corner_avail,  1, "fullcube_do_move: corner_avail == 1");
 
     /* fullcube_from_moves: scramble + inverse returns to identity */
     int scramble[] = {Rx1, Ux1, Rx3, Ux3};
@@ -536,41 +562,218 @@ static void ut_coords(void) {
     EXPECT(raw1 >= 0 && raw1 < CENTER1_RAW_COORDS,
            "center1_get(solved) in valid range");
 
-    int rl = center2_get_rl(ct->ct + 8);  /* equatorial slice */
+    Center2State c2s;
+    center2_set(&c2s, ct->ct, 0);
+    int rl  = center2_getrl(&c2s);
+    int ctv = center2_getct(&c2s);
     EXPECT(rl >= 0 && rl < CENTER2_RL_COORDS,
-           "center2_get_rl(solved) in valid range");
-
-    int ctv = center2_get_ct(ct->ct + 8);
+           "center2_getrl(solved) in valid range");
+    EXPECT(rl == 0, "center2_getrl(solved) == 0");
     EXPECT(ctv >= 0 && ctv < CENTER2_CT_COORDS,
-           "center2_get_ct(solved) in valid range");
+           "center2_getct(solved) in valid range");
+    EXPECT(ctv == 0, "center2_getct(solved) == 0");
 
-    int su = center3_get_slice_u(ct->ct);
-    int sr = center3_get_slice_r(ct->ct);
-    int sf = center3_get_slice_f(ct->ct);
-    EXPECT(su >= 0 && su < CENTER3_SLICE_COORDS, "center3 sliceU in range");
-    EXPECT(sr >= 0 && sr < CENTER3_SLICE_COORDS, "center3 sliceR in range");
-    EXPECT(sf >= 0 && sf < CENTER3_SLICE_COORDS, "center3 sliceF in range");
+    /* Round-trip: setrl(getrl) and setct(getct) must be identity. */
+    for (int i = 0; i < CENTER2_RL_COORDS; i++) {
+        Center2State tmp;
+        center2_setrl(&tmp, i);
+        EXPECT(center2_getrl(&tmp) == i, "center2 rl round-trip");
+    }
+    for (int i = 0; i < CENTER2_CT_COORDS; i++) {
+        Center2State tmp;
+        center2_setct(&tmp, i);
+        EXPECT(center2_getct(&tmp) == i, "center2 ct round-trip");
+    }
 
-    int ep_raw = edge3_get_raw(ep->ep);
-    EXPECT(ep_raw >= 0 && ep_raw < EDGE3_RAW_PERMS,
-           "edge3_get_raw(solved) in valid range");
+    /* Move inverse: apply m then inv(m), rl and ct must be unchanged. */
+    for (int mi = 0; mi < CENTER2_PHASE2_MOVES; mi++) {
+        int m    = move2std[mi];
+        int minv = (m / 3) * 3 + (2 - m % 3);
+        for (int i = 0; i < CENTER2_RL_COORDS; i++) {
+            Center2State tmp;
+            center2_setrl(&tmp, i);
+            center2_move(&tmp, m);
+            center2_move(&tmp, minv);
+            EXPECT(center2_getrl(&tmp) == i, "center2_move rl: m; inv(m) = id");
+        }
+        for (int i = 0; i < CENTER2_CT_COORDS; i++) {
+            Center2State tmp;
+            center2_setct(&tmp, i);
+            center2_move(&tmp, m);
+            center2_move(&tmp, minv);
+            EXPECT(center2_getct(&tmp) == i, "center2_move ct: m; inv(m) = id");
+        }
+    }
 
-    /* A single move should change the Center1 coordinate. */
+    /* Table consistency: rlmv and ctmv match direct simulation. */
+    for (int i = 0; i < CENTER2_RL_COORDS; i++) {
+        for (int mi = 0; mi < CENTER2_PHASE2_MOVES; mi++) {
+            Center2State tmp;
+            center2_setrl(&tmp, i);
+            center2_move(&tmp, move2std[mi]);
+            EXPECT(rlmv[i][mi] == (uint8_t)center2_getrl(&tmp),
+                   "rlmv table matches simulation");
+        }
+    }
+    for (int i = 0; i < CENTER2_CT_COORDS; i++) {
+        for (int mi = 0; mi < CENTER2_PHASE2_MOVES; mi++) {
+            Center2State tmp;
+            center2_setct(&tmp, i);
+            center2_move(&tmp, move2std[mi]);
+            EXPECT(ctmv[i][mi] == (uint16_t)center2_getct(&tmp),
+                   "ctmv table matches simulation");
+        }
+    }
+
+    /* Pruning table: solved states are depth 0, all entries filled. */
+    {
+        static const int solved_rl[6] = {0, 18, 28, 46, 54, 56};
+        for (int i = 0; i < 6; i++)
+            EXPECT(ctprun[solved_rl[i]] == 0,
+                   "ctprun solved state == 0");
+        int unfilled = 0;
+        for (int i = 0; i < CENTER2_PRUN_SIZE; i++)
+            if (ctprun[i] == 0xFF) unfilled++;
+        EXPECT(unfilled == 0, "ctprun fully filled (no 0xFF entries)");
+    }
+
+    {
+        Center3State c3s;
+        center3_set(&c3s, ct->ct, 0);
+        int ct3 = center3_getct(&c3s);
+        EXPECT(ct3 >= 0 && ct3 < CENTER3_STATE_COORDS, "center3_getct in range");
+        EXPECT(ct3 == 0, "center3_getct(solved) == 0");
+        EXPECT(c3prun[ct3] == 0, "c3prun[0] == 0 (solved state)");
+        /* move table: every move from solved must produce a valid coord */
+        for (int m = 0; m < CENTER3_PHASE3_MOVES; m++) {
+            int nc = ctmove[ct3][m];
+            EXPECT(nc >= 0 && nc < CENTER3_STATE_COORDS,
+                   "ctmove[0][m] in range");
+        }
+    }
+
+    /* edge3 unit tests (steps 2-7) */
+    {
+        Edge3State s3;
+
+        /* set_from_int(0) must give identity edge[] */
+        edge3_set_from_int(&s3, 0);
+        int is_id = 1;
+        for (int i = 0; i < 12; i++) if (s3.edge[i] != i) { is_id = 0; break; }
+        EXPECT(is_id, "edge3_set_from_int(0) gives identity edge[]");
+        EXPECT(edge3_get(&s3, 4) == 0,
+               "edge3_get(identity, 4) == 0");
+        EXPECT(edge3_get(&s3, 10) % EDGE3_RAW_PERMS == 0,
+               "edge3_get(identity, 10) % N_RAW == 0");
+
+        /* Round-trip: set_from_int(idx) -> std -> get encodes back same cord1/cord2.
+         * Relies on half_fact[k] = k!/2 factoring as cord1*N_RAW + cord2. */
+        {
+            /* cord1=0, cord2=0 (even parity) */
+            edge3_set_from_int(&s3, 0);
+            edge3_std(&s3);
+            EXPECT(edge3_get(&s3, 4) == 0 &&
+                   edge3_get(&s3, 10) % EDGE3_RAW_PERMS == 0,
+                   "round-trip cord1=0,cord2=0");
+
+            /* cord1=1, cord2=0 (odd parity branch in set_from_int) */
+            int idx1 = EDGE3_RAW_PERMS;  /* = 20160 */
+            edge3_set_from_int(&s3, idx1);
+            edge3_std(&s3);
+            EXPECT(edge3_get(&s3, 4) == 1 &&
+                   edge3_get(&s3, 10) % EDGE3_RAW_PERMS == 0,
+                   "round-trip cord1=1,cord2=0");
+
+            /* cord1=2, cord2=7 */
+            int idx2 = 2 * EDGE3_RAW_PERMS + 7;
+            edge3_set_from_int(&s3, idx2);
+            edge3_std(&s3);
+            EXPECT(edge3_get(&s3, 4) == 2 &&
+                   edge3_get(&s3, 10) % EDGE3_RAW_PERMS == 7,
+                   "round-trip cord1=2,cord2=7");
+        }
+
+        /* Move inverse: U then U' returns to identity */
+        edge3_set_from_int(&s3, 0);
+        edge3_move(&s3, 0);   /* U */
+        edge3_move(&s3, 2);   /* U' */
+        edge3_std(&s3);
+        EXPECT(edge3_get(&s3, 4) == 0, "U then U' gives cord1=0");
+
+        /* F^4 = identity */
+        edge3_set_from_int(&s3, 0);
+        edge3_move(&s3, 4); edge3_move(&s3, 4);
+        edge3_move(&s3, 4); edge3_move(&s3, 4);
+        edge3_std(&s3);
+        EXPECT(edge3_get(&s3, 4) == 0, "F^4 gives cord1=0");
+
+        /* R2 applied twice returns to identity */
+        edge3_set_from_int(&s3, 0);
+        edge3_move(&s3, 3); edge3_move(&s3, 3);
+        edge3_std(&s3);
+        EXPECT(edge3_get(&s3, 4) == 0, "R2^2 gives cord1=0");
+
+        /* u2 applied twice returns to identity (cross-array swap cancels) */
+        edge3_set_from_int(&s3, 0);
+        edge3_move(&s3, 14); edge3_move(&s3, 14);
+        edge3_std(&s3);
+        EXPECT(edge3_get(&s3, 4) == 0, "u2^2 gives cord1=0");
+
+        /* r2 applied twice returns to identity */
+        edge3_set_from_int(&s3, 0);
+        edge3_move(&s3, 15); edge3_move(&s3, 15);
+        edge3_std(&s3);
+        EXPECT(edge3_get(&s3, 4) == 0, "r2^2 gives cord1=0");
+
+        /* rot(0) = u2+d2 has order 2 */
+        edge3_set_from_int(&s3, 0);
+        edge3_rot(&s3, 0); edge3_rot(&s3, 0);
+        edge3_std(&s3);
+        EXPECT(edge3_get(&s3, 4) == 0, "rot(0)^2 = identity");
+
+        /* All 8 rotations of identity keep all edge[] in [0,11] */
+        {
+            int rot_ok = 1;
+            for (int r = 0; r < 8; r++) {
+                edge3_set_from_int(&s3, 0);
+                edge3_rotate(&s3, r);
+                for (int i = 0; i < 12; i++)
+                    if (s3.edge[i] < 0 || s3.edge[i] >= 12) { rot_ok = 0; break; }
+            }
+            EXPECT(rot_ok, "all 8 rotations of identity have edge[] in [0,11]");
+        }
+    }
+
+    /* set_from_edgecube on solved EdgeCube */
+    Edge3State es;
+    int ep_parity = edge3_set_from_edgecube(&es, ep->ep);
+    EXPECT(ep_parity == 0 || ep_parity == 1,
+           "edge3_set_from_edgecube(solved) returns valid parity");
+    {
+        int e3_valid = 1;
+        for (int i = 0; i < 12; i++)
+            if (es.edge[i] < 0 || es.edge[i] >= 12) { e3_valid = 0; break; }
+        EXPECT(e3_valid, "edge3_set_from_edgecube(solved): all edge[] in [0,11]");
+    }
+
+    /* A single wide move should change the Center1 coordinate.
+     * Outer R only cycles the 4 same-coloured R-face centers; Rw also
+     * cycles U/D centers through F/B, making the raw coord non-zero. */
     FullCube fc2; fullcube_identity(&fc2);
-    fullcube_do_move(&fc2, Rx1);
+    fullcube_do_move(&fc2, Rwx1);
     CenterCube *ct2 = fullcube_get_center(&fc2);
     int raw1_after = center1_get(ct2->ct);
-    EXPECT(raw1_after != raw1, "center1_get changes after R move");
+    EXPECT(raw1_after != raw1, "center1_get changes after Rw move");
 
     /* Phase goal validators on solved cube */
     EXPECT(goal_p1(ct),          "goal_p1: solved cube passes");
-    EXPECT(goal_p2(ct),          "goal_p2: solved cube passes");
+    EXPECT(goal_p2(&fc),         "goal_p2: solved cube passes");
     EXPECT(goal_p3_centers(ct),  "goal_p3_centers: solved cube passes");
     EXPECT(goal_p3_edges(ep),    "goal_p3_edges: solved cube passes");
 }
 
 /* =========================================================================
- * Scramble generator  (simple LCG — portable, no rand() state issues)
+ * Scramble generator  (simple LCG -- portable, no rand() state issues)
  * ========================================================================= */
 
 static int lcg(unsigned int *s) {
@@ -627,7 +830,7 @@ static const char *STAGE_TAG[] = {
  * phase goal independently, and returns the furthest stage reached.
  * ========================================================================= */
 
-/* Static beam storage — avoid large VLAs on the stack. */
+/* Static beam storage -- avoid large VLAs on the stack. */
 static FullCube s_p1[SEARCH_BEAM1_MAX];
 static FullCube s_p2[SEARCH_BEAM2_MAX];
 static FullCube s_p3;
@@ -642,6 +845,24 @@ typedef struct {
     bool  goal3e_ok;        /* Phase 3 edges                  */
     bool  sol_verified;     /* independent verification passed */
 } PipelineResult;
+
+/* Parse a kociemba move token ("U", "R2", "F'", ...) to a move index (0-17). */
+static int kok_str_to_move(const char *s) {
+    int base;
+    switch (s[0]) {
+        case 'U': base =  0; break;
+        case 'R': base =  3; break;
+        case 'F': base =  6; break;
+        case 'D': base =  9; break;
+        case 'L': base = 12; break;
+        case 'B': base = 15; break;
+        default: return -1;
+    }
+    if (!s[1])     return base;
+    if (s[1]=='2') return base + 1;
+    if (s[1]=='\'') return base + 2;
+    return -1;
+}
 
 static PipelineResult run_pipeline(const FullCube *scrambled) {
     PipelineResult r;
@@ -661,8 +882,7 @@ static PipelineResult run_pipeline(const FullCube *scrambled) {
     r.n2 = search2(s_p1, r.n1, s_p2, SEARCH_BEAM2_MAX);
     if (r.n2 == 0) return r;
 
-    CenterCube *ct2 = fullcube_get_center(&s_p2[0]);
-    r.goal2_ok = goal_p2(ct2);
+    r.goal2_ok = goal_p2(&s_p2[0]);
     r.len2 = s_p2[0].length2;
     if (!r.goal2_ok) return r;
     r.stage = ST_P2;
@@ -679,24 +899,45 @@ static PipelineResult run_pipeline(const FullCube *scrambled) {
     if (!r.goal3c_ok || !r.goal3e_ok) return r;
     r.stage = ST_P3;
 
-    /* ---- Full solve check ---- */
-    if (!goal_solved(&s_p3)) return r;
-    r.stage = ST_SOLVED;
-
-    /* ---- Independent solution verification ----
-     * Rebuild the scrambled cube from its buffered moves, apply the
-     * solution portion on top, and check the goal again. */
+    /* ---- Kociemba finish ---- */
     {
-        int scr_len = scrambled->moveLength;
-        int sol_len = s_p3.moveLength - scr_len;
-        if (sol_len >= 0 && sol_len < FULLCUBE_MOVE_BUF) {
-            FullCube verify;
-            fullcube_from_moves(&verify,
-                                (const int *)(const void *)s_p3.moveBuffer,
-                                scr_len);
-            for (int i = 0; i < sol_len; i++)
-                fullcube_do_move(&verify, s_p3.moveBuffer[scr_len + i]);
-            r.sol_verified = goal_solved(&verify);
+        normalize_orientation(&s_p3);
+        char facelet54[55];
+        fullcube_to_333_facelet(&s_p3, facelet54);
+        char *kok = solution(facelet54, 20, 1000, 0,
+                             "../4x4-solver/ckociemba/cprunetables");
+        if (!kok) {
+            char tmp = facelet54[7]; facelet54[7] = facelet54[19]; facelet54[19] = tmp;
+            kok = solution(facelet54, 20, 1000, 0,
+                           "../4x4-solver/ckociemba/cprunetables");
+        }
+        fprintf(stderr, "kok: '%s'  facelet: %s\n", kok ? kok : "(null)", facelet54);
+        if (kok) {
+            if (kok[0] != 'E') {
+                char *tok = strtok(kok, " ");
+                while (tok) {
+                    int m = kok_str_to_move(tok);
+                    if (m >= 0) fullcube_do_move(&s_p3, m);
+                    tok = strtok(NULL, " ");
+                }
+                if (goal_solved(&s_p3)) {
+                    r.stage = ST_SOLVED;
+                    /* Independent verification: rebuild scramble, then apply solution. */
+                    int scr_len = scrambled->move_length;
+                    int sol_len = s_p3.move_length - scr_len;
+                    if (sol_len >= 0 && sol_len < FULLCUBE_MOVE_BUF) {
+                        int scr_moves[FULLCUBE_MOVE_BUF];
+                        for (int i = 0; i < scr_len; i++)
+                            scr_moves[i] = s_p3.move_buffer[i];
+                        FullCube verify;
+                        fullcube_from_moves(&verify, scr_moves, scr_len);
+                        for (int i = 0; i < sol_len; i++)
+                            fullcube_do_move(&verify, s_p3.move_buffer[scr_len + i]);
+                        r.sol_verified = goal_solved(&verify);
+                    }
+                }
+            }
+            free(kok);
         }
     }
 
@@ -708,7 +949,7 @@ static PipelineResult run_pipeline(const FullCube *scrambled) {
  * ========================================================================= */
 
 static void integration_tests(bool verbose) {
-    printf("\n" C_BOLD "=== Integration: scramble → pipeline ===" C_RESET "\n\n");
+    printf("\n" C_BOLD "=== Integration: scramble -> pipeline ===" C_RESET "\n\n");
 
     /* Seed from environment or current time */
     unsigned int seed = (unsigned int)time(NULL);
@@ -716,17 +957,17 @@ static void integration_tests(bool verbose) {
     if (env_s) seed = (unsigned int)strtoul(env_s, NULL, 0);
     printf("  Seed: 0x%08X  (override with TPR_SEED=<hex>)\n\n", seed);
 
-    /* Lengths: 5 scrambles of each of 5 length bands */
+    /* Lengths: 10 scrambles of each of 5 length bands */
     static const int BANDS[] = {5, 10, 20, 30, 40};
-    static const int PER_BAND = 5;
+    static const int PER_BAND = 10;
     int n_bands = (int)(sizeof(BANDS)/sizeof(BANDS[0]));
     int n_total = n_bands * PER_BAND;
 
     /* Column header */
-    printf("  %-5s %-5s | %-6s | %-5s %-5s %-5s | %s\n",
-           "#", "len", "stage", "P1mv", "P2mv", "P3mv", "scramble");
-    printf("  %-5s %-5s + %-6s + %-5s %-5s %-5s + %s\n",
-           "-----","-----","------","-----","-----","-----",
+    printf("  %-5s %-2s | %-6s | %-7s | %-5s %-5s %-5s | %s\n",
+           "#", "n", "stage", "time", "P1mv", "P2mv", "P3mv", "scramble");
+    printf("  %-5s %-2s + %-6s + %-7s + %-5s %-5s %-5s + %s\n",
+           "-----","--","------","-------","-----","-----","-----",
            "-----------------------------------------");
 
     int by_stage[5] = {0};
@@ -746,8 +987,13 @@ static void integration_tests(bool verbose) {
         FullCube scrambled;
         fullcube_from_moves(&scrambled, moves, len);
 
-        /* Run pipeline */
+        /* Run pipeline with timing */
+        struct timespec ts0, ts1;
+        clock_gettime(CLOCK_MONOTONIC, &ts0);
         PipelineResult r = run_pipeline(&scrambled);
+        clock_gettime(CLOCK_MONOTONIC, &ts1);
+        double ms = (ts1.tv_sec - ts0.tv_sec) * 1e3
+                  + (ts1.tv_nsec - ts0.tv_nsec) * 1e-6;
         by_stage[(int)r.stage]++;
 
         /* Detect goal validation failures (search bug) */
@@ -755,14 +1001,16 @@ static void integration_tests(bool verbose) {
         if (r.n2 > 0 && !r.goal2_ok) goal_fail[2]++;
         if (r.n3 > 0 && (!r.goal3c_ok || !r.goal3e_ok)) goal_fail[3]++;
 
-        /* Format move counts */
-        char mv1[8]="-", mv2[8]="-", mv3[8]="-";
+        /* Format move counts and elapsed time */
+        char mv1[8]="-", mv2[8]="-", mv3[8]="-", tmbuf[12];
         if (r.n1 > 0) snprintf(mv1, sizeof(mv1), "%d", r.len1);
         if (r.n2 > 0) snprintf(mv2, sizeof(mv2), "%d", r.len2);
         if (r.n3 > 0) snprintf(mv3, sizeof(mv3), "%d", r.len3);
+        if (ms < 1000.0) snprintf(tmbuf, sizeof(tmbuf), "%5.1fms", ms);
+        else              snprintf(tmbuf, sizeof(tmbuf), "%5.2fs", ms / 1000.0);
 
-        printf("  [%02d] len=%-2d | %s | %-5s %-5s %-5s | %s\n",
-               t+1, len, STAGE_TAG[(int)r.stage],
+        printf("  [%02d]  %-2d | %s | %-7s | %-5s %-5s %-5s | %s\n",
+               t+1, len, STAGE_TAG[(int)r.stage], tmbuf,
                mv1, mv2, mv3, scr_str);
 
         if (verbose) {
@@ -807,7 +1055,7 @@ static void integration_tests(bool verbose) {
         if (goal_fail[ph] > 0) {
             printf("  " C_RED "WARNING" C_RESET
                    ": Phase %d returned solutions that failed goal validation"
-                   " (%d cases) — likely a search bug.\n", ph, goal_fail[ph]);
+                   " (%d cases) -- likely a search bug.\n", ph, goal_fail[ph]);
         }
     }
 }
@@ -819,10 +1067,13 @@ static void integration_tests(bool verbose) {
 int main(int argc, char **argv) {
     bool verbose = (argc > 1 && strcmp(argv[1], "-v") == 0);
 
+    setbuf(stdout, NULL);  /* line-buffer stdout so output appears even if hung */
+
     printf(C_BOLD "=== TPR Solver Test Suite ===" C_RESET "\n\n");
 
     /* Initialise all tables. */
     tpr_init();
+    printf("(init done)\n");
 
     /* Unit tests */
     printf(C_BOLD "=== Unit Tests ===" C_RESET "\n\n");

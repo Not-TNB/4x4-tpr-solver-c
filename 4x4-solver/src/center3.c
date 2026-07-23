@@ -50,20 +50,19 @@ void center3_set(Center3State *s, const uint8_t ct[24], int eparity) {
 int center3_getct(const Center3State *s) {
     int idx = 0, r = 4;
     for (int i = 6; i >= 0; i--)
-        if (s->ud[i] != s->ud[7]) idx += Cnk[i][r--];
+        if (s->ud[i] != s->ud[7]) idx += tpr_Cnk[i][r--];
     idx *= 35;
     r = 4;
     for (int i = 6; i >= 0; i--)
-        if (s->fb[i] != s->fb[7]) idx += Cnk[i][r--];
+        if (s->fb[i] != s->fb[7]) idx += tpr_Cnk[i][r--];
     idx *= 12;
     int check = s->fb[7] ^ s->ud[7];
     int idxrl = 0; r = 4;
     for (int i = 7; i >= 0; i--)
-        if (s->rl[i] != check) idxrl += Cnk[i][r--];
+        if (s->rl[i] != check) idxrl += tpr_Cnk[i][r--];
     return s->parity + 2 * (idx + std2rl[idxrl]);
 }
 
-/* decode combined coordinate back into s */
 void center3_setct(Center3State *s, int idx) {
     s->parity = idx & 1;
     idx >>= 1;
@@ -72,20 +71,20 @@ void center3_setct(Center3State *s, int idx) {
     int r = 4;
     for (int i = 7; i >= 0; i--) {
         s->rl[i] = 0;
-        if (idxrl >= Cnk[i][r]) { idxrl -= Cnk[i][r--]; s->rl[i] = 1; }
+        if (idxrl >= tpr_Cnk[i][r]) { idxrl -= tpr_Cnk[i][r--]; s->rl[i] = 1; }
     }
     int idxfb = idx % 35;
     idx /= 35;
     r = 4;
     s->fb[7] = 0;
     for (int i = 6; i >= 0; i--) {
-        if (idxfb >= Cnk[i][r]) { idxfb -= Cnk[i][r--]; s->fb[i] = 1; }
+        if (idxfb >= tpr_Cnk[i][r]) { idxfb -= tpr_Cnk[i][r--]; s->fb[i] = 1; }
         else s->fb[i] = 0;
     }
     r = 4;
     s->ud[7] = 0;
     for (int i = 6; i >= 0; i--) {
-        if (idx >= Cnk[i][r]) { idx -= Cnk[i][r--]; s->ud[i] = 1; }
+        if (idx >= tpr_Cnk[i][r]) { idx -= tpr_Cnk[i][r--]; s->ud[i] = 1; }
         else s->ud[i] = 0;
     }
 }
@@ -150,7 +149,6 @@ void center3_move(Center3State *s, int p3m) {
     }
 }
 
-/* build ctmove[29400][20] */
 void center3_create_move_table(void) {
     Center3State s;
     for (int i = 0; i < CENTER3_STATE_COORDS; i++) {

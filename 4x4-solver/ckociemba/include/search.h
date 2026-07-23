@@ -1,5 +1,9 @@
-#ifndef SEARCH_H
-#define SEARCH_H
+#ifndef CKOCIEMBA_SEARCH_H
+#define CKOCIEMBA_SEARCH_H
+
+/* Modified from original: renamed include guard to
+    CKOCIEMBA_SEARCH_H
+to avoid collision with 4x4-solver/include/search.h. */
 
 typedef struct {
     int ax[31];             // The axis of the move
@@ -60,4 +64,4 @@ int totalDepth(search_t* search, int depthPhase1, int maxDepth);
 // applied to facelets will result into the given pattern
 void patternize(char* facelets, char* pattern, char* patternized);
 
-#endif
+#endif  /* CKOCIEMBA_SEARCH_H */

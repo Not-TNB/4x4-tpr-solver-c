@@ -14,8 +14,8 @@ uint8_t  eprun[EDGE3_N_EPRUN];
 int      e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 int      e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 
-/* factX[k] = k!/2  (factX[0]=factX[1]=1) */
-static const int factX[13] = {
+/* half_fact[k] = k!/2  (half_fact[0]=half_fact[1]=1) */
+static const int half_fact[13] = {
     1, 1, 1, 3, 12, 60, 360, 2520, 20160, 181440, 1814400, 19958400, 239500800
 };
 
@@ -28,7 +28,7 @@ void edge3_set_from_int(Edge3State *s, int idx) {
     long long val = 0xba9876543210LL;
     int parity = 0;
     for (int i = 0; i < 11; i++) {
-        int p = factX[11 - i];
+        int p = half_fact[11 - i];
         int v = idx / p;
         idx  %= p;
         parity ^= v;
@@ -187,7 +187,6 @@ void edge3_rotate(Edge3State *s, int r) {
     if (r != 0) edge3_rot(s, 0);
 }
 
-/* Convert an EdgeCube ep[24] to Edge3State */
 static const int FullEdgeMap[12] = {0, 2, 4, 6, 1, 3, 7, 5, 8, 9, 10, 11};
 
 int edge3_set_from_edgecube(Edge3State *s, const uint8_t ep[24]) {
@@ -233,17 +232,17 @@ void edge3_init_mvrot(void) {
 }
 
 /* -------------------------------------------------------------------------
- * Compute Lehmer rank of ep[] after applying combined move+rotation mrIdx,
+ * Compute Lehmer rank of ep[] after applying combined move+rotation mr_idx,
  * without modifying ep[]. Uses precomputed mvrot/mvroto tables.
- * mrIdx = move * EDGE3_SYM_COUNT + rotation.
+ * mr_idx = move * EDGE3_SYM_COUNT + rotation.
  * end=4  -> cord1 (P(12,4) range)
  * end=10 -> combined rank; caller takes %N_RAW for cord2
  * ------------------------------------------------------------------------- */
-int edge3_getmvrot(const int *ep, int mrIdx, int end) {
+int edge3_getmvrot(const int *ep, int mr_idx, int end) {
     long long val = 0xba9876543210LL;
     int idx = 0;
     for (int i = 0; i < end; i++) {
-        int v = e3mvroto[mrIdx][ep[e3mvrot[mrIdx][i]]] << 2;
+        int v = e3mvroto[mr_idx][ep[e3mvrot[mr_idx][i]]] << 2;
         idx = idx * (12 - i) + (int)((val >> v) & 0xf);
         val -= 0x111111111110LL << v;
     }

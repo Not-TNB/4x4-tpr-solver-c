@@ -72,7 +72,7 @@ static void ct1_rotate(uint8_t ct[24], int k) {
 static int ct1_get(const uint8_t ct[24]) {
     int idx = 0, r = 8;
     for (int i = 23; i >= 0; i--)
-        if (ct[i] == 1) idx += Cnk[i][r--];
+        if (ct[i] == 1) idx += tpr_Cnk[i][r--];
     return idx;
 }
 
@@ -80,8 +80,8 @@ static void ct1_set(uint8_t ct[24], int idx) {
     int r = 8;
     for (int i = 23; i >= 0; i--) {
         ct[i] = 0;
-        if (idx >= Cnk[i][r]) {
-            idx -= Cnk[i][r--];
+        if (idx >= tpr_Cnk[i][r]) {
+            idx -= tpr_Cnk[i][r--];
             ct[i] = 1;
         }
     }
@@ -92,14 +92,14 @@ static void ct1_set(uint8_t ct[24], int idx) {
 int center1_raw_urf(const uint8_t ct[24], int urf) {
     int rank = 0, r = 8;
     for (int i = 23; i >= 0; i--)
-        if (ct[i] % 3 == urf) rank += Cnk[i][r--];
+        if (ct[i] % 3 == urf) rank += tpr_Cnk[i][r--];
     return rank;
 }
 
 int center1_get(const uint8_t ct[24]) {
     int rank = 0, r = 8;
     for (int i = 23; i >= 0; i--)
-        if (ct[i] == 0 || ct[i] == 3) rank += Cnk[i][r--];
+        if (ct[i] == 0 || ct[i] == 3) rank += tpr_Cnk[i][r--];
     return rank;
 }
 

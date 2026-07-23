@@ -1,6 +1,7 @@
 #include "../include/cubie.h"
 #include "../include/tpr_util.h"
 #include <string.h>
+#include <stdio.h>
 
 /* face*16+local_slot shorthands; private -- fc/fd/ff aliased to avoid clashes */
 #define FSLOT(face, local) ((face)*16 + (local))
@@ -107,7 +108,7 @@
 
 /* Solved-state slot for each centre position (U0-U3, D0-D3, F0-F3, B0-B3, R0-R3, L0-L3).
  * Within each face group: pos2=local10 (BR), pos3=local9 (BL) -- not row-major. */
-const uint8_t centerFacelet[24] = {
+const uint8_t center_facelet[24] = {
     /* U centres */
     FSLOT(0,5), FSLOT(0,6), FSLOT(0,10), FSLOT(0,9),
     /* D centres */
@@ -128,7 +129,7 @@ const uint8_t centerFacelet[24] = {
 
 void center_cube_identity(CenterCube *c) {
     for (int i = 0; i < 24; i++)
-        c->ct[i] = (uint8_t)(centerFacelet[i] / 16);
+        c->ct[i] = (uint8_t)(center_facelet[i] / 16);
 }
 
 static const uint8_t ct_cycles[12][3][4] = {
@@ -272,10 +273,10 @@ void fullcube_identity(FullCube *c) {
     center_cube_identity(&c->center);
     edge_cube_identity(&c->edge);
     corner_cube_identity(&c->corner);
-    c->moveLength   = 0;
-    c->edgeAvail    = 0;
-    c->centerAvail  = 0;
-    c->cornerAvail  = 0;
+    c->move_length   = 0;
+    c->edge_avail    = 0;
+    c->center_avail  = 0;
+    c->corner_avail  = 0;
     c->value        = 0;
     c->add1         = false;
     c->length1      = 0;
@@ -289,9 +290,8 @@ void fullcube_copy(FullCube *dst, const FullCube *src) {
 }
 
 void fullcube_move(FullCube *c, int m) {
-    /* lazy: buffer only */
-    if (c->moveLength < FULLCUBE_MOVE_BUF)
-        c->moveBuffer[c->moveLength++] = (uint8_t)m;
+    if (c->move_length < FULLCUBE_MOVE_BUF)
+        c->move_buffer[c->move_length++] = (uint8_t)m;
 }
 
 void fullcube_do_move(FullCube *c, int m) {
@@ -299,26 +299,26 @@ void fullcube_do_move(FullCube *c, int m) {
     edge_cube_move(&c->edge, m);
     corner_cube_move(&c->corner, m);
     fullcube_move(c, m);
-    c->edgeAvail   = c->moveLength;
-    c->centerAvail = c->moveLength;
-    c->cornerAvail = c->moveLength;
+    c->edge_avail   = c->move_length;
+    c->center_avail = c->move_length;
+    c->corner_avail = c->move_length;
 }
 
 EdgeCube *fullcube_get_edge(FullCube *c) {
-    while (c->edgeAvail < c->moveLength)
-        edge_cube_move(&c->edge, c->moveBuffer[c->edgeAvail++]);
+    while (c->edge_avail < c->move_length)
+        edge_cube_move(&c->edge, c->move_buffer[c->edge_avail++]);
     return &c->edge;
 }
 
 CenterCube *fullcube_get_center(FullCube *c) {
-    while (c->centerAvail < c->moveLength)
-        center_cube_move(&c->center, c->moveBuffer[c->centerAvail++]);
+    while (c->center_avail < c->move_length)
+        center_cube_move(&c->center, c->move_buffer[c->center_avail++]);
     return &c->center;
 }
 
 CornerCube *fullcube_get_corner(FullCube *c) {
-    while (c->cornerAvail < c->moveLength)
-        corner_cube_move(&c->corner, c->moveBuffer[c->cornerAvail++]);
+    while (c->corner_avail < c->move_length)
+        corner_cube_move(&c->corner, c->move_buffer[c->corner_avail++]);
     return &c->corner;
 }
 
@@ -371,7 +371,7 @@ void fullcube_from_facelet(FullCube *c, const char *facelet96) {
     }
 
     for (int i = 0; i < 24; i++)
-        c->center.ct[i] = f[centerFacelet[i]];
+        c->center.ct[i] = f[center_facelet[i]];
 
     for (int i = 0; i < 24; i++) {
         for (int j = 0; j < 24; j++) {
@@ -402,4 +402,53 @@ void fullcube_from_facelet(FullCube *c, const char *facelet96) {
 void fullcube_from_moves(FullCube *c, const int *moves, int n) {
     fullcube_identity(c);
     for (int i = 0; i < n; i++) fullcube_do_move(c, moves[i]);
+}
+
+void fullcube_do_alg(FullCube *c, const int *moves, int n) {
+    for (int i = 0; i < n; i++) fullcube_do_move(c, moves[i]);
+}
+
+void fullcube_to_333_facelet(FullCube *c, char out54[55]) {
+    static const char face_chars[] = "URFDLB?";
+    static const int edge_color[12][2] = {
+        {2,0}, {4,0}, {5,0}, {1,0},
+        {5,3}, {4,3}, {2,3}, {1,3},
+        {2,4}, {5,4}, {5,1}, {2,1}
+    };
+    static const int corner_facelet[8][3] = {
+        { 8,  9, 20}, { 6, 18, 38}, { 0, 36, 47}, { 2, 45, 11},
+        {29, 26, 15}, {27, 44, 24}, {33, 53, 42}, {35, 17, 51}
+    };
+
+    CenterCube *cen = fullcube_get_center(c);
+    EdgeCube   *edg = fullcube_get_edge(c);
+    CornerCube *cor = fullcube_get_corner(c);
+
+    int sticker[54];
+    for (int i=0; i<54; i++) { sticker[i] = 6; }
+
+    for (int i = 0; i < 8; i++) {
+        int p = cor->cp[i], o = cor->co[i];
+        for (int k = 0; k < 3; k++)
+            sticker[corner_facelet[i][k]] = corner_facelet[p][(k-o+3)%3] / 9;
+    }
+
+    static const int center_group[6] = {0, 16, 8, 4, 20, 12};
+    for (int i = 0; i < 6; i++)
+        sticker[4 + 9*i] = cen->ct[center_group[i]];
+
+    static const int edge_map[24] = {
+        19, 37, 46, 10, 52, 43, 25, 16,
+        21, 50, 48, 23,
+         7,  3,  1,  5, 34, 30, 28, 32,
+        41, 39, 14, 12                                                                                   
+    };
+    for (int s = 0; s < 24; s++)
+        sticker[edge_map[s]] = edg->ep[s] < 12
+            ? edge_color[edg->ep[s]][0]
+            : edge_color[edg->ep[s]-12][1];
+
+    for (int i=0; i<54; i++) out54[i] = face_chars[sticker[i]];
+
+    out54[54] = '\0';
 }

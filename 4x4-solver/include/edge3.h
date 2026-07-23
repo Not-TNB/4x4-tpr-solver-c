@@ -66,9 +66,9 @@ int  edge3_set_from_edgecube(Edge3State *s, const uint8_t ep[24]);
  * Read-only coordinate evaluation
  * ------------------------------------------------------------------------- */
 
-/* Lehmer rank of first end elements of ep[] after applying move+rotation mrIdx,
- * without modifying ep[]. mrIdx = move*8 + rotation. */
-int edge3_getmvrot(const int *ep, int mrIdx, int end);
+/* Lehmer rank of first end elements of ep[] after applying move+rotation mr_idx,
+ * without modifying ep[]. mr_idx = move*8 + rotation. */
+int edge3_getmvrot(const int *ep, int mr_idx, int end);
 
 /* Returns exact BFS depth, or 10 if state is unseen (eprun[idx]==0xFF). */
 int edge3_getprun(int edge_coord);

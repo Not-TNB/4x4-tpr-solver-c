@@ -1,18 +1,18 @@
 #include "../include/tpr_util.h"
 #include <string.h>
 
-int Cnk[25][25];
+int tpr_Cnk[25][25];
 int fact[13] = {
     1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600
 };
 
 void build_pascal_triangle(void) {
     for (int n = 0; n < 25; n++) {
-        Cnk[n][0] = 1;
+        tpr_Cnk[n][0] = 1;
         for (int k = 1; k <= n; k++)
-            Cnk[n][k] = Cnk[n-1][k-1] + Cnk[n-1][k];
+            tpr_Cnk[n][k] = tpr_Cnk[n-1][k-1] + tpr_Cnk[n-1][k];
         for (int k = n+1; k < 25; k++)
-            Cnk[n][k] = 0;
+            tpr_Cnk[n][k] = 0;
     }
 }
 

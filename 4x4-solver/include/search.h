@@ -8,7 +8,7 @@
  *
  *   Phase 1 (search1): IDA* over Center1 sym-coord.
  *             Generates up to 500 solutions. Each is a FullCube with
- *             the U/D axis oriented and moves recorded in moveBuffer.
+ *             the U/D axis oriented and moves recorded in move_buffer.
  *
  *   Phase 2 (search2): Beam search over best Phase-1 results.
  *             For each, runs IDA* over (Center2 rl × Center2 ct) coord.
@@ -19,16 +19,15 @@
  *             centres simultaneously. Generates one Phase-3 solution.
  *
  *   Phase 4 (solve333): The accumulated move sequence fully reduces the
- *             4×4 to an equivalent 3×3. Call min2phase to finish.
+ *             4×4 to an equivalent 3×3. Call kociemba to finish.
  *
  * Beam capacities are hardcoded constants.
  */
 
 #include "cubie.h"
-#include <stdint.h>
 
-#define SEARCH_BEAM1_MAX  500
-#define SEARCH_BEAM2_MAX  100
+#define SEARCH_BEAM1_MAX 500
+#define SEARCH_BEAM2_MAX 100
 
 /* -------------------------------------------------------------------------
  * Phase search functions
@@ -82,23 +81,29 @@ typedef struct {
     int  depth;        /* current search depth (bound) */
     int  max_depth;    /* maximum allowed (for phase time-limits) */
     int  prev_move;    /* last move applied (for ckmv pruning) */
-    int  axis;         /* axis of last move (for skipAxis) */
+    int  axis;         /* axis of last move (for skip_axis) */
     /* Phase-specific coordinate state (union might be cleaner later). */
     int  coord1;       /* Center1 sym-class */
     int  coord_rl;     /* Center2 rl */
     int  coord_ct;     /* Center2 ct */
-    int  coord_su;     /* Center3 sliceU */
-    int  coord_sr;     /* Center3 sliceR */
-    int  coord_sf;     /* Center3 sliceF */
+    int  coord_su;     /* Center3 slice_U */
+    int  coord_sr;     /* Center3 slice_R */
+    int  coord_sf;     /* Center3 slice_F */
     int  coord_ep;     /* Edge3 sym-class (or raw during inner loop) */
     int  coord_ep_raw; /* Edge3 raw-within-class */
     int  eparity;      /* parity bit */
 } SearchState;
 
+/*
+ * Normalize cube orientation after Phase 3 so that color 0 (U-color) is on U
+ * and color 2 (F-color) is on F.  Appends at most four rotation moves to
+ * fc->move_buffer so they appear in the solution string.
+ * Must be called after search3 and before fullcube_to_333_facelet.
+ */
+void normalize_orientation(FullCube *fc);
+
 /* -------------------------------------------------------------------------
- * Top-level entry point
- *
- * Solve a 4×4×4 cube given as a 96-char facelet string (6×16, "URFDLB" order).
+ * Solve a 4×4×4 cube given as a 96-char facelet string (6*16, "URFDLB" order).
  * The solution is written as a null-terminated move string into buf.
  * Returns total move count, or -1 on failure.
  * ------------------------------------------------------------------------- */

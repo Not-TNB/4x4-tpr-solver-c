@@ -88,12 +88,12 @@ extern bool ckmv2[29][28]; /* phase-2 version */
 extern bool ckmv3[21][20]; /* phase-3 version */
 
 /*
- * skipAxis[i]: when ckmv[i][m] is true, jump m to skipAxis[m]
+ * skip_axis[i]: when ckmv[i][m] is true, jump m to skip_axis[m]
  * to skip all remaining redundant moves on the same axis.
  */
-extern int skipAxis [36];
-extern int skipAxis2[28];
-extern int skipAxis3[20];
+extern int skip_axis [36];
+extern int skip_axis2[28];
+extern int skip_axis3[20];
 
 /* Build all tables above. Must be called once before any search. */
 void moves_init(void);
