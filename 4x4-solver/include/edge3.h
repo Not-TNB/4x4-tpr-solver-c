@@ -37,6 +37,10 @@ extern uint8_t  eprun[EDGE3_N_EPRUN];
 extern int      e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 extern int      e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 
+/* Compact r=0 slices of e3mvrot/e3mvroto for combined move+std update */
+extern int e3cpos[EDGE3_PHASE3_MOVES][12];
+extern int e3cval[EDGE3_PHASE3_MOVES][12];
+
 /* -------------------------------------------------------------------------
  * State operations
  * ------------------------------------------------------------------------- */
@@ -80,6 +84,7 @@ int edge3_getprun(int edge_coord);
 void edge3_init_mvrot(void);
 void edge3_init_sym2raw(void);
 void edge3_create_prun(void);
+void edge3_init_combined(void);
 void edge3_init(void);
 
 #endif /* EDGE3_H */

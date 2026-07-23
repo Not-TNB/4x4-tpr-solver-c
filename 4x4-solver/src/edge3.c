@@ -14,6 +14,9 @@ uint8_t  eprun[EDGE3_N_EPRUN];
 int      e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 int      e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 
+int      e3cpos[EDGE3_PHASE3_MOVES][12];
+int      e3cval[EDGE3_PHASE3_MOVES][12];
+
 /* half_fact[k] = k!/2  (half_fact[0]=half_fact[1]=1) */
 static const int half_fact[13] = {
     1, 1, 1, 3, 12, 60, 360, 2520, 20160, 181440, 1814400, 19958400, 239500800
@@ -384,8 +387,19 @@ void edge3_create_prun(void) {
     } while (changed);
 }
 
+void edge3_init_combined(void) {
+    for (int mi = 0; mi < EDGE3_PHASE3_MOVES; mi++) {
+        int base = mi * EDGE3_SYM_COUNT;
+        for (int k = 0; k < 12; k++) {
+            e3cpos[mi][k] = e3mvrot[base][k];
+            e3cval[mi][k] = e3mvroto[base][k];
+        }
+    }
+}
+
 void edge3_init(void) {
     edge3_init_mvrot();
+    edge3_init_combined();
     edge3_init_sym2raw();
     edge3_create_prun();
 }

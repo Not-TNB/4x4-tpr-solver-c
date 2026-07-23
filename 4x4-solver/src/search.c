@@ -209,7 +209,7 @@ int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
 }
 
 /* -------------------------------------------------------------------------
- * Phase 3 -- IDA* over (Center3 × Edge3) joint coordinate.
+ * Phase 3 -- IDA* over joint coordinate.
  *
  * Move set: 20 moves (move3std).
  * ------------------------------------------------------------------------- */
@@ -217,7 +217,7 @@ int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
 static int p3_done;
 static FullCube p3_result;
 
-static Edge3State tempe[21];
+static int tempe[21][12];
 
 /* IDA* over (Center3 × Edge3). edge_coord = symcord1*N_RAW+cord2 (sym-reduced).
  * tempe[depth] is the std-normalised Edge3State, seeded by the caller. */
@@ -259,11 +259,11 @@ static void search3_ida(FullCube *fc, int depth, int bound,
             continue;
         }
 
-        int cord1x         = edge3_getmvrot(tempe[depth].edge, mi * 8, 4);
+        int cord1x         = edge3_getmvrot(tempe[depth], mi * 8, 4);
         int sym_raw        = e3raw2sym[cord1x];
         int symx           = sym_raw & 7;
         int new_cls        = sym_raw >> 3;
-        int cord2x         = edge3_getmvrot(tempe[depth].edge, mi * 8 | symx, 10) % EDGE3_RAW_PERMS;
+        int cord2x         = edge3_getmvrot(tempe[depth], mi * 8 | symx, 10) % EDGE3_RAW_PERMS;
         int new_edge_coord = new_cls * EDGE3_RAW_PERMS + cord2x;
 
         int h_e2 = edge3_getprun(new_edge_coord);
@@ -272,9 +272,8 @@ static void search3_ida(FullCube *fc, int depth, int bound,
             continue;
         }
 
-        memcpy(&tempe[depth + 1], &tempe[depth], sizeof(Edge3State));
-        edge3_move(&tempe[depth + 1], mi);
-        edge3_std(&tempe[depth + 1]);
+        for (int k = 0; k < 12; k++)
+            tempe[depth+1][k] = e3cval[mi][tempe[depth][e3cpos[mi][k]]];
 
         fullcube_move(fc, m);
         search3_ida(fc, depth + 1, bound, nct, new_edge_coord, child_prun, mi);
@@ -291,7 +290,7 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
     typedef struct {
         int        p2_idx;
         int        ct;
-        Edge3State es0;        /* std-normalised, pre-sym-rotation */
+        int        es0[12];    /* std-normalised edge[], pre-sym rot */
         int        edge_coord; /* sym-reduced */
         int        h_c;
         int        h_e;        /* 10 if unseen in BFS */
@@ -334,7 +333,7 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
 
         cands[nc].p2_idx     = i;
         cands[nc].ct         = ct;
-        cands[nc].es0        = es;
+        memcpy(cands[nc].es0, es.edge, 12 * sizeof(int));
         cands[nc].edge_coord = edge_coord;
         cands[nc].h_c        = h_c;
         cands[nc].h_e        = h_e;
@@ -364,7 +363,7 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
 
             FullCube fc;
             fullcube_copy(&fc, &p2[c->p2_idx]);
-            tempe[0] = c->es0;
+            memcpy(tempe[0], c->es0, 12 * sizeof(int));
             search3_ida(&fc, 0, p3_bound, c->ct, c->edge_coord, p3_bound % 3, 20);
         }
     }
