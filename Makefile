@@ -2,11 +2,11 @@ CC      = gcc
 CFLAGS  = -std=c11 -Wall -Wextra \
           -I 4x4-solver/ckociemba/include \
           -I 4x4-solver/include \
-          -I include
+          -I cube/include
 AR      = ar
 ARFLAGS = rcs
 
-SRCS    = src/alg.c src/cube4.c src/util.c
+SRCS    = cube/src/alg.c cube/src/cube4.c cube/src/util.c
 OBJS    = $(SRCS:.c=.o)
 DEPS    = $(OBJS:.o=.d)
 LIB     = libsolver.a

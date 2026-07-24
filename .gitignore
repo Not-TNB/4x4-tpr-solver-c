@@ -13,3 +13,4 @@ compile_commands.json
 
 # Java reference implementation (documented in docs/)
 TPR-4x4x4-Solver/
+*.dSYM/
