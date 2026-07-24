@@ -1,2 +1,2 @@
 CompileFlags:
-  Add: [-std=c11, -Iinclude]
+  Add: [-std=c11, -Icube/include]

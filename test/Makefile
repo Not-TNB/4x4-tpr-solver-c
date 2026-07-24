@@ -2,7 +2,7 @@ CC     = gcc
 CFLAGS = -std=c11 -Wall -Wextra -O3 -march=native \
          -I../4x4-solver/ckociemba/include \
          -I../4x4-solver/include \
-         -I../include
+         -I../cube/include
 
 SOLVER_SRCS = \
     ../4x4-solver/src/tpr_util.c       \
@@ -13,8 +13,8 @@ SOLVER_SRCS = \
     ../4x4-solver/src/center3.c        \
     ../4x4-solver/src/edge3.c          \
     ../4x4-solver/src/search.c         \
-    ../src/alg.c                       \
-    ../src/util.c
+    ../cube/src/alg.c                  \
+    ../cube/src/util.c
 
 CKOCIEMBA_SRCS = \
     ../4x4-solver/ckociemba/coordcube.c          \

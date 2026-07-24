@@ -223,12 +223,10 @@ static int tempe[21][12];
 
 /* tempe[depth] holds the std-normalised edge permutation, seeded by caller. */
 static void search3_ida(FullCube *fc, int depth, int bound,
-                          int ct, int edge_coord, int prev_move) {
+                          int ct, int edge_coord, int edge_prun, int prev_move) {
     int h_c = c3prun[ct];
     if (h_c > bound - depth) return;
-
-    int h_e = edge3_getprun(edge_coord);
-    if (h_e > bound - depth) return;
+    if (edge_prun > bound - depth) return;
 
     if (ct == 0 && edge_coord == 0) {
         FullCube tmp;
@@ -264,7 +262,7 @@ static void search3_ida(FullCube *fc, int depth, int bound,
         int cord2x         = edge3_getmvrot(tempe[depth], mi * 8 | symx, 10) % EDGE3_RAW_PERMS;
         int new_edge_coord = new_cls * EDGE3_RAW_PERMS + cord2x;
 
-        int new_h_e = edge3_getprun(new_edge_coord);
+        int new_h_e = edge3_getprun(new_edge_coord, edge_prun);
         if (new_h_e > remaining) {
             if (new_h_e > remaining + 1 && mi < 14) mi = skip_axis3[mi] - 1;
             continue;
@@ -274,7 +272,7 @@ static void search3_ida(FullCube *fc, int depth, int bound,
             tempe[depth+1][k] = e3cval[mi][tempe[depth][e3cpos[mi][k]]];
 
         fullcube_move(fc, m);
-        search3_ida(fc, depth + 1, bound, nct, new_edge_coord, mi);
+        search3_ida(fc, depth + 1, bound, nct, new_edge_coord, new_h_e, mi);
         fc->move_length--;
         if (p3_done) return;
     }
@@ -325,7 +323,7 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
 
         int ct    = center3_getct(&c3s);
         int h_c = c3prun[ct];
-        int h_e = edge3_getprun(edge_coord);
+        int h_e = edge3_getprun_init(edge_coord);
         int tb    = p2[i].length1 + p2[i].length2;
         int hmax  = h_c > h_e ? h_c : h_e;
 
@@ -363,7 +361,7 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
             FullCube fc;
             fullcube_copy(&fc, &p2[c->p2_idx]);
             memcpy(tempe[0], c->es0, 12 * sizeof(int));
-            search3_ida(&fc, 0, p3_bound, c->ct, c->edge_coord, 20);
+            search3_ida(&fc, 0, p3_bound, c->ct, c->edge_coord, c->h_e, 20);
         }
     }
 

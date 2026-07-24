@@ -5,7 +5,16 @@ int      e3sym2raw [EDGE3_SYM_CLASSES];
 uint16_t e3symstate[EDGE3_SYM_CLASSES];
 int      e3raw2sym [EDGE3_CORD1_MAX];
 
-uint8_t eprun[EDGE3_N_EPRUN];
+uint32_t eprun_packed[EDGE3_N_EPRUN / 16];
+
+static inline int get_eprun_raw(int idx) {
+    return (int)((eprun_packed[idx >> 4] >> ((idx & 0xf) << 1)) & 0x3u);
+}
+
+/* Only call when the 2-bit field at idx is currently 0x3 (unseen). */
+static inline void set_eprun(int idx, int val) {
+    eprun_packed[idx >> 4] ^= (uint32_t)(0x3 ^ val) << ((idx & 0xf) << 1);
+}
 
 int      e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 int      e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
@@ -211,8 +220,49 @@ int edge3_getmvrot(const int *ep, int mr_idx, int end) {
     return idx;
 }
 
-int edge3_getprun(int edge_coord) {
-    return eprun[edge_coord];
+int edge3_getprun(int edge_coord, int prun) {
+    int depm3 = get_eprun_raw(edge_coord);
+    if (depm3 == 0x3) return EDGE3_MAX_DEPTH;
+    return (depm3 - prun + 16) % 3 + prun - 1;
+}
+
+/* Backward BFS trace: follow neighbors with decreasing depth%3 until we
+ * reach the solved state (index 0), counting steps.  Called at most once
+ * per Phase-3 candidate, so O(depth*17) coord work is negligible. */
+int edge3_getprun_init(int edge_coord) {
+    int depm3 = get_eprun_raw(edge_coord);
+    if (depm3 == 0x3) return EDGE3_MAX_DEPTH;
+    if (edge_coord == 0) return 0;
+
+    Edge3State e;
+    int cur   = edge_coord;
+    int depth = 0;
+
+    while (cur != 0) {
+        int target = (depm3 == 0) ? 2 : depm3 - 1;
+
+        int symcord1 = cur / EDGE3_RAW_PERMS;
+        int cord1    = e3sym2raw[symcord1];
+        int cord2    = cur % EDGE3_RAW_PERMS;
+        edge3_set_from_int(&e, cord1 * EDGE3_RAW_PERMS + cord2);
+
+        for (int m = 0; m < 17; m++) {
+            int cord1x    = edge3_getmvrot(e.edge, m << 3, 4);
+            int sym_raw   = e3raw2sym[cord1x];
+            int symx      = sym_raw & 7;
+            int symcord1x = sym_raw >> 3;
+            int cord2x    = edge3_getmvrot(e.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
+            int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
+
+            if (get_eprun_raw(idx) == target) {
+                depth++;
+                cur   = idx;
+                depm3 = target;
+                break;
+            }
+        }
+    }
+    return depth;
 }
 
 void edge3_init_sym2raw(void) {
@@ -246,83 +296,78 @@ void edge3_init_sym2raw(void) {
     }
 }
 
-/* Forward BFS fills depths 0-8; backward pass fills depth 9+ by finding
- * one known neighbor per unseen state and assigning depth+1. */
+/* Unified forward/backward BFS storing depth%3 in 2 bits.
+ * Forward (depth 0-8):  scan entries at depm3, set unseen neighbors to dep1m3.
+ * Backward (depth 9+):  scan unseen entries, set those adjacent to a dep-depth
+ *                       neighbor (stored == depm3) to dep1m3. */
 void edge3_create_prun(void) {
-    memset(eprun, 0xFF, sizeof(eprun));
-    eprun[0] = 0;
+    memset(eprun_packed, 0xFF, sizeof(eprun_packed));
+    set_eprun(0, 0);
     int done = 1;
 
     Edge3State e3, f3, g3;
 
-    /* Forward BFS: depths 0 through 8. */
-    for (int depth = 0; depth <= 8; depth++) {
-        for (int i = 0; i < EDGE3_N_EPRUN; i++) {
-            if (eprun[i] != (uint8_t)depth) continue;
+    for (int depth = 0; done < EDGE3_N_EPRUN; depth++) {
+        int depm3  = depth % 3;
+        int dep1m3 = (depth + 1) % 3;
+        int inv    = (depth >= 9);
+        int find   = inv ? 0x3 : depm3;
+        int chk    = inv ? depm3 : 0x3;
 
-            int symcord1 = i / EDGE3_RAW_PERMS;
-            int cord1    = e3sym2raw[symcord1];
-            int cord2    = i % EDGE3_RAW_PERMS;
-            edge3_set_from_int(&e3, cord1 * EDGE3_RAW_PERMS + cord2);
+        for (int i_ = 0; i_ < EDGE3_N_EPRUN; i_ += 16) {
+            uint32_t word = eprun_packed[i_ >> 4];
+            /* Forward pass: skip words with no set entries (all unseen). */
+            if (!inv && word == 0xFFFFFFFFu) continue;
 
-            for (int m = 0; m < 17; m++) {
-                int cord1x    = edge3_getmvrot(e3.edge, m << 3, 4);
-                int sym_raw   = e3raw2sym[cord1x];
-                int symx      = sym_raw & 7;
-                int symcord1x = sym_raw >> 3;
-                int cord2x    = edge3_getmvrot(e3.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
-                int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
+            for (int i = i_; i < i_ + 16; i++) {
+                if ((int)((word >> ((i & 0xf) << 1)) & 0x3u) != find) continue;
 
-                if (eprun[idx] != 0xFF) continue;
+                int symcord1 = i / EDGE3_RAW_PERMS;
+                int cord1    = e3sym2raw[symcord1];
+                int cord2    = i % EDGE3_RAW_PERMS;
+                edge3_set_from_int(&e3, cord1 * EDGE3_RAW_PERMS + cord2);
 
-                eprun[idx] = (uint8_t)(depth + 1);
-                done++;
+                for (int m = 0; m < 17; m++) {
+                    int cord1x    = edge3_getmvrot(e3.edge, m << 3, 4);
+                    int sym_raw   = e3raw2sym[cord1x];
+                    int symx      = sym_raw & 7;
+                    int symcord1x = sym_raw >> 3;
+                    int cord2x    = edge3_getmvrot(e3.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
+                    int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
 
-                uint16_t ss = e3symstate[symcord1x];
-                if (ss == 1) continue;
+                    if (get_eprun_raw(idx) != chk) continue;
 
-                memcpy(&f3, &e3, sizeof(Edge3State));
-                edge3_move(&f3, m);
-                edge3_rotate(&f3, symx);
-
-                for (int j = 1; (ss >>= 1) != 0; j++) {
-                    if (!(ss & 1)) continue;
-                    memcpy(&g3, &f3, sizeof(Edge3State));
-                    edge3_rotate(&g3, j);
-                    edge3_std(&g3);
-                    int idxx = symcord1x * EDGE3_RAW_PERMS
-                               + edge3_get(&g3, 10) % EDGE3_RAW_PERMS;
-                    if (eprun[idxx] == 0xFF) {
-                        eprun[idxx] = (uint8_t)(depth + 1);
+                    if (inv) {
+                        /* Backward: mark the unseen entry i whose neighbor is at depth. */
+                        set_eprun(i, dep1m3);
                         done++;
+                        break;
+                    }
+
+                    /* Forward: mark the unseen neighbor idx. */
+                    set_eprun(idx, dep1m3);
+                    done++;
+
+                    uint16_t ss = e3symstate[symcord1x];
+                    if (ss == 1) continue;
+
+                    memcpy(&f3, &e3, sizeof(Edge3State));
+                    edge3_move(&f3, m);
+                    edge3_rotate(&f3, symx);
+
+                    for (int j = 1; (ss >>= 1) != 0; j++) {
+                        if (!(ss & 1)) continue;
+                        memcpy(&g3, &f3, sizeof(Edge3State));
+                        edge3_rotate(&g3, j);
+                        edge3_std(&g3);
+                        int idxx = symcord1x * EDGE3_RAW_PERMS
+                                   + edge3_get(&g3, 10) % EDGE3_RAW_PERMS;
+                        if (get_eprun_raw(idxx) == 0x3) {
+                            set_eprun(idxx, dep1m3);
+                            done++;
+                        }
                     }
                 }
-            }
-        }
-    }
-
-    while (done < EDGE3_N_EPRUN) {
-        for (int i = 0; i < EDGE3_N_EPRUN; i++) {
-            if (eprun[i] != 0xFF) continue;
-
-            int symcord1 = i / EDGE3_RAW_PERMS;
-            int cord1    = e3sym2raw[symcord1];
-            int cord2    = i % EDGE3_RAW_PERMS;
-            edge3_set_from_int(&e3, cord1 * EDGE3_RAW_PERMS + cord2);
-
-            for (int m = 0; m < 17; m++) {
-                int cord1x    = edge3_getmvrot(e3.edge, m << 3, 4);
-                int sym_raw   = e3raw2sym[cord1x];
-                int symx      = sym_raw & 7;
-                int symcord1x = sym_raw >> 3;
-                int cord2x    = edge3_getmvrot(e3.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
-                int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
-
-                if (eprun[idx] == 0xFF) continue;  /* neighbor also unseen */
-
-                eprun[i] = eprun[idx] + 1;
-                done++;
-                break;  /* found one known neighbor; stop */
             }
         }
     }
