@@ -78,7 +78,7 @@ void corner_cube_copy(CornerCube *dst, const CornerCube *src);
 void corner_cube_mult(const CornerCube *a, const CornerCube *b, CornerCube *prod);
 void corner_cube_move(CornerCube *c, int m); /* m in 0..35, only outer 0..17 matter */
 int  corner_cube_parity(const CornerCube *c);
-void corner_cube_init_moves(void); /* build corner_move_cube[18] */
+void corner_cube_init_moves(void);
 
 /* -------------------------------------------------------------------------
  * FullCube
@@ -117,18 +117,13 @@ void fullcube_move(FullCube *c, int m);
 /* Apply move immediately to all three sub-cubes AND buffer. */
 void fullcube_do_move(FullCube *c, int m);
 
-/* Lazily flush pending moves into each sub-cube, return pointer. */
+/* Flush pending buffer moves into each sub-cube and return pointer. */
 EdgeCube   *fullcube_get_edge  (FullCube *c);
 CenterCube *fullcube_get_center(FullCube *c);
 CornerCube *fullcube_get_corner(FullCube *c);
 
-/* Build FullCube from a 96-char facelet string ("URFDLB" chars). */
 void fullcube_from_facelet(FullCube *c, const char *facelet96);
-
-/* Build FullCube by applying a sequence of move indices. */
 void fullcube_from_moves(FullCube *c, const int *moves, int n);
-
-/* Apply a sequence of move indices to an existing FullCube. */
 void fullcube_do_alg(FullCube *c, const int *moves, int n);
 
 /*

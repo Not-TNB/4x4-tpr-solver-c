@@ -56,7 +56,6 @@ int parity_u8(const uint8_t *arr, int len) {
 }
 
 void set8perm(uint8_t *arr, int idx) {
-    /* Decode Lehmer rank idx (0..40319) into a permutation of 0..7. */
     int free[8] = {0,1,2,3,4,5,6,7};
     for (int i = 0; i < 8; i++) {
         int f = fact[7 - i];

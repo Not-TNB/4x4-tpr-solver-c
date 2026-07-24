@@ -1,15 +1,11 @@
 #include "../include/edge3.h"
 #include <string.h>
 
-/* -------------------------------------------------------------------------
- * Tables
- * ------------------------------------------------------------------------- */
-
 int      e3sym2raw [EDGE3_SYM_CLASSES];
 uint16_t e3symstate[EDGE3_SYM_CLASSES];
 int      e3raw2sym [EDGE3_CORD1_MAX];
 
-uint8_t  eprun[EDGE3_N_EPRUN];
+uint8_t eprun[EDGE3_N_EPRUN];
 
 int      e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 int      e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
@@ -22,11 +18,6 @@ static const int half_fact[13] = {
     1, 1, 1, 3, 12, 60, 360, 2520, 20160, 181440, 1814400, 19958400, 239500800
 };
 
-/* -------------------------------------------------------------------------
- * Decode raw combined index (cord1 * N_RAW + cord2) into s->edge[12].
- * Uses the packed-nibble half-factorial Lehmer decode.
- * Sets edgeo[i] = i (std state).
- * ------------------------------------------------------------------------- */
 void edge3_set_from_int(Edge3State *s, int idx) {
     long long val = 0xba9876543210LL;
     int parity = 0;
@@ -49,10 +40,6 @@ void edge3_set_from_int(Edge3State *s, int idx) {
     for (int i = 0; i < 12; i++) s->edgeo[i] = i;
 }
 
-/* -------------------------------------------------------------------------
- * Normalise via edgeo[]: build inverse of edgeo[] into s->temp[],
- * remap edge[i] = temp[edge[i]], reset edgeo[i] = i.
- * ------------------------------------------------------------------------- */
 void edge3_std(Edge3State *s) {
     for (int i = 0; i < 12; i++)
         s->temp[s->edgeo[i]] = i;
@@ -62,12 +49,7 @@ void edge3_std(Edge3State *s) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * Lehmer rank of first `end` elements of s->edge[].
- * Caller must have called std() first.
- * end=4  -> cord1 in [0, 11879]
- * end=10 -> combined index; %20160 gives cord2
- * ------------------------------------------------------------------------- */
+/* end=4 -> cord1; end=10 -> %20160 gives cord2. */
 int edge3_get(const Edge3State *s, int end) {
     long long val = 0xba9876543210LL;
     int idx = 0;
@@ -79,12 +61,7 @@ int edge3_get(const Edge3State *s, int end) {
     return idx;
 }
 
-/* -------------------------------------------------------------------------
- * 20-case switch applying circle/swap to both edge[] and edgeo[].
- * circle(a,b,c,d): d<-c<-b<-a<-d  (CW)
- * swap4(a,b,c,d):  a↔c, b↔d
- * swap2(x,y):      x↔y
- * ------------------------------------------------------------------------- */
+/* circle(a,b,c,d): d<-c<-b<-a<-d  swap4(a,b,c,d): a↔c,b↔d  swap2(x,y): x↔y */
 
 static void e3_circle(int *a, int p, int q, int r, int s) {
     int t = a[s]; a[s] = a[r]; a[r] = a[q]; a[q] = a[p]; a[p] = t;
@@ -139,12 +116,6 @@ void edge3_move(Edge3State *s, int p3m) {
             break;
     }
 }
-
-/* -------------------------------------------------------------------------
- * rot(0) = move(14); move(17)
- * rot(1) and rot(2) use cross-array circlex/swapx ops.
- * rotate(r): decompose r into pairs of rot(1)+rot(2) then optional rot(0).
- * ------------------------------------------------------------------------- */
 
 /* swapx(x,y): swap edge[x] with edgeo[y]. */
 static void e3_swapx(int *edge, int *edgeo, int x, int y) {
@@ -214,11 +185,6 @@ int edge3_set_from_edgecube(Edge3State *s, const uint8_t ep[24]) {
     return parity;
 }
 
-/* -------------------------------------------------------------------------
- * For each of the 20 p3 moves × 8 rotations, simulate from identity,
- * record where each position maps (mvrot) and the value-relabelling
- * inverse permutation (mvroto) after std().
- * ------------------------------------------------------------------------- */
 void edge3_init_mvrot(void) {
     Edge3State s;
     for (int m = 0; m < EDGE3_PHASE3_MOVES; m++) {
@@ -234,13 +200,6 @@ void edge3_init_mvrot(void) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * Compute Lehmer rank of ep[] after applying combined move+rotation mr_idx,
- * without modifying ep[]. Uses precomputed mvrot/mvroto tables.
- * mr_idx = move * EDGE3_SYM_COUNT + rotation.
- * end=4  -> cord1 (P(12,4) range)
- * end=10 -> combined rank; caller takes %N_RAW for cord2
- * ------------------------------------------------------------------------- */
 int edge3_getmvrot(const int *ep, int mr_idx, int end) {
     long long val = 0xba9876543210LL;
     int idx = 0;
@@ -252,24 +211,10 @@ int edge3_getmvrot(const int *ep, int mr_idx, int end) {
     return idx;
 }
 
-/* -------------------------------------------------------------------------
- * Pruning
- * ------------------------------------------------------------------------- */
 int edge3_getprun(int edge_coord) {
-    int v = eprun[edge_coord];
-    return v == 255 ? 10 : v;
+    return eprun[edge_coord];
 }
 
-/* -------------------------------------------------------------------------
- * Initialisation
- * ------------------------------------------------------------------------- */
-
-/* -------------------------------------------------------------------------
- * Enumerate all 11,880 cord1 values with 8 symmetry elements.
- * Builds e3sym2raw[1538], e3raw2sym[11880], e3symstate[1538].
- * Rotation sequence: rot(0) after each j; additionally rot(1)+rot(2) on odd j.
- * syminv = {0,1,6,3,4,5,2,7}.
- * ------------------------------------------------------------------------- */
 void edge3_init_sym2raw(void) {
     static const int syminv[8] = {0, 1, 6, 3, 4, 5, 2, 7};
     Edge3State e;
@@ -301,20 +246,17 @@ void edge3_init_sym2raw(void) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * Forward BFS over the N_EPRUN = 1538*20160 = 31,006,080 sym×cord2 state space
- *
- * Symstate propagation: after setting idx, expand sym-equivalent cord2 values
- * within the same sym-class without additional move applications.
- * ------------------------------------------------------------------------- */
+/* Forward BFS fills depths 0-8; backward pass fills depth 9+ by finding
+ * one known neighbor per unseen state and assigning depth+1. */
 void edge3_create_prun(void) {
-    memset(eprun, 0xFF, sizeof(eprun));  /* 0xFF = unseen */
+    memset(eprun, 0xFF, sizeof(eprun));
     eprun[0] = 0;
+    int done = 1;
 
     Edge3State e3, f3, g3;
 
-    /* Forward */
-    for (int depth = 0; depth < 9; depth++) {
+    /* Forward BFS: depths 0 through 8. */
+    for (int depth = 0; depth <= 8; depth++) {
         for (int i = 0; i < EDGE3_N_EPRUN; i++) {
             if (eprun[i] != (uint8_t)depth) continue;
 
@@ -334,6 +276,7 @@ void edge3_create_prun(void) {
                 if (eprun[idx] != 0xFF) continue;
 
                 eprun[idx] = (uint8_t)(depth + 1);
+                done++;
 
                 uint16_t ss = e3symstate[symcord1x];
                 if (ss == 1) continue;
@@ -349,17 +292,16 @@ void edge3_create_prun(void) {
                     edge3_std(&g3);
                     int idxx = symcord1x * EDGE3_RAW_PERMS
                                + edge3_get(&g3, 10) % EDGE3_RAW_PERMS;
-                    if (eprun[idxx] == 0xFF)
+                    if (eprun[idxx] == 0xFF) {
                         eprun[idxx] = (uint8_t)(depth + 1);
+                        done++;
+                    }
                 }
             }
         }
     }
 
-    /* Backward */
-    int changed;
-    do {
-        changed = 0;
+    while (done < EDGE3_N_EPRUN) {
         for (int i = 0; i < EDGE3_N_EPRUN; i++) {
             if (eprun[i] != 0xFF) continue;
 
@@ -376,15 +318,14 @@ void edge3_create_prun(void) {
                 int cord2x    = edge3_getmvrot(e3.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
                 int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
 
-                int nval = (int)eprun[idx];
-                if (nval == 0xFF) continue;
+                if (eprun[idx] == 0xFF) continue;  /* neighbor also unseen */
 
-                eprun[i] = (uint8_t)(nval + 1);
-                changed = 1;
-                break;
+                eprun[i] = eprun[idx] + 1;
+                done++;
+                break;  /* found one known neighbor; stop */
             }
         }
-    } while (changed);
+    }
 }
 
 void edge3_init_combined(void) {

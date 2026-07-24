@@ -20,7 +20,6 @@
 extern uint16_t ctmove[CENTER3_STATE_COORDS][CENTER3_PHASE3_MOVES];
 extern uint8_t  c3prun[CENTER3_STATE_COORDS];
 
-/* Working state: binary arrays encoding which of the two colors each slot holds. */
 typedef struct {
     uint8_t ud[8];  /* (ct[i]   / 3) ^ 1 for i=0..7  (1=U-colored, 0=D-colored) */
     uint8_t fb[8];  /* (ct[i+8] / 3) ^ 1 for i=0..7  (1=F-colored, 0=B-colored) */
@@ -28,19 +27,10 @@ typedef struct {
     int     parity;
 } Center3State;
 
-/* Populate s from a CenterCube ct[24] and edge permutation parity (0 or 1). */
 void center3_set(Center3State *s, const uint8_t ct[24], int eparity);
-
-/* Encode s -> combined coordinate [0, 29399]. */
-int center3_getct(const Center3State *s);
-
-/* Decode combined coordinate -> s. */
+int  center3_getct(const Center3State *s);
 void center3_setct(Center3State *s, int idx);
-
-/* Apply Phase 3 move p3m (0..19) to s in place. */
 void center3_move(Center3State *s, int p3m);
-
-/* Initialisation. */
 void center3_create_move_table(void);
 void center3_create_prun(void);
 void center3_init(void);

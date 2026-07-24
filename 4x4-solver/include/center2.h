@@ -57,7 +57,6 @@ typedef struct {
     int parity;
 } Center2State;
 
-/* Populate from a CenterCube's ct[24] array and the current edge parity. */
 void center2_set(Center2State *s, const uint8_t cc_ct[24], int edge_parity);
 
 /* rl coordinate: C(7,4) rank of rl[0..6] differing from rl[7], *2 + parity. */
@@ -68,20 +67,12 @@ void center2_setrl(Center2State *s, int idx);
 int  center2_getct(const Center2State *s);
 void center2_setct(Center2State *s, int idx);
 
-/* Apply standard move m (0..35) to a Center2State (simulation kernel). */
 void center2_move(Center2State *s, int m);
 
-/* -------------------------------------------------------------------------
- * Initialisation
- * ------------------------------------------------------------------------- */
 void center2_create_rl_move_table(void);
 void center2_create_ct_move_table(void);
 void center2_create_prun(void);
 void center2_init(void);
-
-/* -------------------------------------------------------------------------
- * Solved detection
- * ------------------------------------------------------------------------- */
-int center2_is_solved(int rl, int ct);
+int  center2_is_solved(int rl, int ct);
 
 #endif /* CENTER2_H */

@@ -3,16 +3,10 @@
 #include "../include/moves.h"
 #include <string.h>
 
-/* -------------------------------------------------------------------------
- * Tables
- * ------------------------------------------------------------------------- */
 uint8_t  rlmv  [CENTER2_RL_COORDS][CENTER2_PHASE2_MOVES];
 uint16_t ctmv  [CENTER2_CT_COORDS][CENTER2_PHASE2_MOVES];
 uint8_t  ctprun[CENTER2_PRUN_SIZE];   /* indexed: ct * CENTER2_RL_COORDS + rl */
 
-/* -------------------------------------------------------------------------
- * Center2State: populate, get/set coordinates
- * ------------------------------------------------------------------------- */
 
 void center2_set(Center2State *s, const uint8_t cc_ct[24], int edge_parity) {
     for (int i = 0; i < 16; i++)
@@ -68,11 +62,7 @@ void center2_setct(Center2State *s, int idx) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * Move simulation
- *
- * pmv[m] = 1 for moves that toggle edge parity: Rwx1(21), Rwx3(23), Lwx1(30), Lwx3(32).
- * ------------------------------------------------------------------------- */
+/* pmv[m]=1 for moves that toggle edge parity: Rwx1, Rwx3, Lwx1, Lwx3. */
 static const int pmv[36] = {
     0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0,  /* outer U R F D L B */
     0,0,0,                                        /* Uw */
@@ -127,10 +117,6 @@ void center2_move(Center2State *s, int m) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * Initialisation
- * ------------------------------------------------------------------------- */
-
 void center2_create_rl_move_table(void) {
     Center2State s;
     for (int i = 0; i < CENTER2_RL_COORDS; i++) {
@@ -159,7 +145,7 @@ void center2_create_prun(void) {
     /* Seed the 6 solved states (ct=0, rl in {0,18,28,46,54,56}). */
     static const int solved_rl[6] = {0, 18, 28, 46, 54, 56};
     for (int i = 0; i < 6; i++)
-        ctprun[solved_rl[i]] = 0;   /* ct=0 -> index = 0*70 + rl = rl */
+        ctprun[solved_rl[i]] = 0;
 
     /* Forward BFS using first 23 of the 28 phase-2 moves. */
     int done = 6;

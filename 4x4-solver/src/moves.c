@@ -9,10 +9,6 @@ const char *move2str[36] = {
     "Dw","Dw2","Dw'","Lw","Lw2","Lw'","Bw","Bw2","Bw'"
 };
 
-/*
- * Phase 2 move set (28 moves): all 18 outer + Uw2 Fw2 Dw2 Bw2 + all Rw Lw.
- * Indices match moves.h definitions.
- */
 int move2std[29] = {
     Ux1, Ux2, Ux3,
     Rx1, Rx2, Rx3,

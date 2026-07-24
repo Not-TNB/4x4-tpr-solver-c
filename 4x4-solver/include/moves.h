@@ -54,48 +54,29 @@
 
 #define EOM 36  /* end-of-move-set sentinel */
 
-/* Human-readable move strings indexed by move index 0..35. */
 extern const char *move2str[36];
 
-/*
- * Phase 2 move set: 28 moves.
- * All 18 outer moves + Uw2 Fw2 Dw2 Bw2 + all Rw Lw (×3).
- * move2std[i] = standard move index for phase-2 move i.
- * move2std[28] = EOM.
- */
-extern int move2std[29];
+/* Phase 2: 28 moves — all 18 outer + Uw2 Fw2 Dw2 Bw2 + all Rw Lw. */
+extern int move2std[29];  /* [28]=EOM */
 
-/*
- * Phase 3 move set: 20 moves.
- * All outer U/F/D/B (×3), R2 L2 only, all wide as half-turns only.
- * move3std[i] = standard move index for phase-3 move i.
- * move3std[20] = EOM.
- */
-extern int move3std[21];
+/* Phase 3: 20 moves — outer U/F/D/B×3, R2 L2, wide half-turns only. */
+extern int move3std[21];  /* [20]=EOM */
 
-/* Reverse mappings: standard index -> phase index (-1 if not in set). */
+/* Standard-index -> phase-index reverse maps (-1 if not in set). */
 extern int std2move[37];
 extern int std3move[37];
 
-/*
- * Move-redundancy tables.
- *   ckmv[i][j]  = true  iff move j is redundant immediately after move i
- *                 (same face, or commuting opposite-face pair out of canonical order).
- *   ckmv[36][j] = false for all j  (sentinel: no previous move).
- */
+/* ckmv[i][j]=true iff move j is redundant after move i (same face or
+ * commuting opposite-face pair out of order). Row N=sentinel (no prev move). */
 extern bool ckmv [37][36];
-extern bool ckmv2[29][28]; /* phase-2 version */
-extern bool ckmv3[21][20]; /* phase-3 version */
+extern bool ckmv2[29][28];
+extern bool ckmv3[21][20];
 
-/*
- * skip_axis[i]: when ckmv[i][m] is true, jump m to skip_axis[m]
- * to skip all remaining redundant moves on the same axis.
- */
+/* skip_axis[m]: first index past m's axis; jump here when ckmv prunes m. */
 extern int skip_axis [36];
 extern int skip_axis2[28];
 extern int skip_axis3[20];
 
-/* Build all tables above. Must be called once before any search. */
 void moves_init(void);
 
 #endif /* MOVES_H */

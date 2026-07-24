@@ -102,12 +102,7 @@
 #define be  FSLOT(5,14)
 #define bf  FSLOT(5,15)
 
-/* -------------------------------------------------------------------------
- * Facelet slot -> centre/edge/corner position tables.
- * ------------------------------------------------------------------------- */
-
-/* Solved-state slot for each centre position (U0-U3, D0-D3, F0-F3, B0-B3, R0-R3, L0-L3).
- * Within each face group: pos2=local10 (BR), pos3=local9 (BL) -- not row-major. */
+/* Solved-state slot for each centre position. Within each group: not row-major. */
 const uint8_t center_facelet[24] = {
     /* U centres */
     FSLOT(0,5), FSLOT(0,6), FSLOT(0,10), FSLOT(0,9),
@@ -123,9 +118,6 @@ const uint8_t center_facelet[24] = {
     FSLOT(4,5), FSLOT(4,6), FSLOT(4,10), FSLOT(4,9),
 };
 
-/* -------------------------------------------------------------------------
- * CenterCube
- * ------------------------------------------------------------------------- */
 
 void center_cube_identity(CenterCube *c) {
     for (int i = 0; i < 24; i++)
@@ -156,9 +148,6 @@ void center_cube_move(CenterCube *c, int m) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * EdgeCube
- * ------------------------------------------------------------------------- */
 
 void edge_cube_identity(EdgeCube *e) {
     for (int i = 0; i < 24; i++) e->ep[i] = (uint8_t)i;
@@ -205,9 +194,6 @@ int edge_cube_parity(const EdgeCube *e) {
     return parity_u8(perm, 12);
 }
 
-/* -------------------------------------------------------------------------
- * CornerCube
- * ------------------------------------------------------------------------- */
 
 CornerCube corner_move_cube[18];
 
@@ -227,7 +213,6 @@ void corner_cube_mult(const CornerCube *a, const CornerCube *b, CornerCube *prod
 }
 
 void corner_cube_move(CornerCube *c, int m) {
-    /* m in 0..35; only outer moves affect corners: use m % 18. */
     CornerCube tmp;
     corner_cube_mult(c, &corner_move_cube[m % 18], &tmp);
     corner_cube_copy(c, &tmp);
@@ -265,9 +250,6 @@ void corner_cube_init_moves(void) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * FullCube
- * ------------------------------------------------------------------------- */
 
 void fullcube_identity(FullCube *c) {
     center_cube_identity(&c->center);

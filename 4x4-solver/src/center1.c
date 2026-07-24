@@ -3,10 +3,6 @@
 #include "../include/moves.h"
 #include <string.h>
 
-/* -------------------------------------------------------------------------
- * Tables
- * ------------------------------------------------------------------------- */
-
 int      raw2sym[CENTER1_RAW_COORDS];
 int      ctsmv  [CENTER1_SYM_CLASSES][36];
 int      sym2raw [CENTER1_SYM_CLASSES];
@@ -15,8 +11,6 @@ uint8_t  symmult [CENTER1_SYM_COUNT][CENTER1_SYM_COUNT];
 uint8_t  symmove [CENTER1_SYM_COUNT][36];
 uint8_t  syminv  [CENTER1_SYM_COUNT];
 int      finish  [CENTER1_SYM_COUNT];
-
-/* Init helpers -- ct[24] used as binary or identity permutation. */
 
 static const uint8_t ct_mv_cyc[12][3][4] = {
     /* U  */ {{ 0, 1, 2, 3}},
@@ -42,7 +36,6 @@ static void ct1_move(uint8_t ct[24], int m) {
     }
 }
 
-/* 4 primitive cube rotations */
 static void ct1_rot(uint8_t ct[24], int r) {
     switch (r) {
     case 0: ct1_move(ct, Uwx2); ct1_move(ct, Dwx2); break;
@@ -86,8 +79,6 @@ static void ct1_set(uint8_t ct[24], int idx) {
         }
     }
 }
-
-/* Raw coordinate: C(24,8) -- which 8 positions hold a U/D sticker. */
 
 int center1_raw_urf(const uint8_t ct[24], int urf) {
     int rank = 0, r = 8;

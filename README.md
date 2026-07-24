@@ -1,2 +1,61 @@
 # 4x4-tpr-solver-c
-4x4x4 cube solver in C, based on cs0x7f's TPR algorithm (three-phase reduction).
+
+C port of [cs0x7f's TPR algorithm](https://github.com/cs0x7f/TPR-4x4x4-Solver) for solving the 4×4×4 Rubik's cube.
+
+## Algorithm
+
+Three IDA\* phases reduce the cube to an equivalent 3×3, then [ckociemba](https://github.com/muodov/kociemba) finishes it optimally.
+
+- **Phase 1** — orient the U/D centre axis (C(24,8) sym-reduced coordinate)
+- **Phase 2** — solve R/L centres while preserving Phase 1 (C(7,4)×C(15,8) coordinate)
+- **Phase 3** — pair all 12 dedges and finish remaining centres jointly (29,400 × 31M state space)
+- **Phase 4** — ckociemba 3×3 finish
+
+## Build & run
+
+```bash
+cd test
+make run          # unit + integration tests
+make bench        # benchmark 10 scrambles
+./test_bench N    # benchmark N scrambles (run after make bench)
+```
+
+## Performance
+
+Benchmarked on 1000 random 60-move scrambles (Apple M-series, `-O3 -march=native`):
+
+```
+Time  (ms):  min     4.6   max  42421   mean   480   std  1923
+Moves:       min      38   max     51   mean  46.8
+
+Time distribution:
+  <10ms     |                                |    6    0%
+  10-50ms   | ####################           |  196   19%
+  50-100ms  | ############################## |  281   28%
+  100-200ms | ##########################     |  244   24%
+  200-300ms | ######                         |   64    6%
+  300-500ms | #####                          |   50    5%
+  0.5-1s    | ########                       |   75    7%
+  1-2s      | #####                          |   47    4%
+  2-5s      | ##                             |   19    1%
+  5-10s     | #                              |   11    1%
+  10-30s    |                                |    6    0%
+  30-60s    |                                |    1    0%
+  >60s      |                                |    0    0%
+
+Moves distribution:
+   38     |                                |   1    0%
+   39     |                                |   1    0%
+   43     | #                              |  11    1%
+   44     | ##                             |  30    3%
+   45     | #########                      |  96    9%
+   46     | #####################          | 228   22%
+   47     | ############################## | 311   31%
+   48     | #######################        | 239   23%
+   49     | ######                         |  72    7%
+   50     |                                |   9    0%
+   51     |                                |   2    0%
+```
+
+God's number for the 4×4 is within the range of 35–55 moves (OBTM),
+so the solution move range is satisfactory.

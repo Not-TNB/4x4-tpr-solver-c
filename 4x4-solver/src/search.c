@@ -13,41 +13,50 @@
 
 /* -------------------------------------------------------------------------
  * Phase 1 -- IDA* over Center1 sym-class coordinate.
- *
- * Goal: csprun[coord] == 0  (U/D axis oriented).
- * Move set: all 36 moves.
- * Beam output: up to SEARCH_BEAM1_MAX FullCubes sorted by total depth.
+ * Goal: U/D axis oriented.  Move set: 27 moves.
  * ------------------------------------------------------------------------- */
 
 static int p1_found;
 static FullCube *p1_out;
 static int       p1_max;
 
-/* IDA* with accumulated-symmetry tracking: each move is conjugated by sym
- * before the table lookup so coord tracks the true orbit class, not just the
- * canonical representative (preventing spurious class-0 hits).
- * class-0 is always the goal: finish[sym]==0 for all sym (orbit of raw=0 is
- * a singleton — all 4 primitive rotations fix it). */
+/* Accumulates sym so each move is conjugated before the table lookup,
+ * tracking the true orbit class rather than just the canonical representative. */
 static void search1_ida(FullCube *fc, int depth, int bound,
                          int coord, int sym, int prev_move) {
     int h = csprun[coord];
     if (h > bound - depth) return;
 
     if (h == 0) {
-        /* finish==735470: pieces at RL positions 16-23 — only then is getrl() valid.
-         * Other class-0 values (0, 12869) leave a 3-color mix there, underflowing r. */
-        if (finish[sym] == 735470 && p1_found < p1_max) {
-            fullcube_copy(&p1_out[p1_found], fc);
-            p1_out[p1_found].length1 = depth;
-            p1_found++;
+        /* finish[sym]==735470: no correction needed.
+         * finish[sym]==0:     apply z rotation (Fw+Bw').
+         * finish[sym]==12869: apply y rotation (Uw+Dw'). */
+        if (p1_found < p1_max) {
+            if (finish[sym] == 735470) {
+                fullcube_copy(&p1_out[p1_found], fc);
+                p1_out[p1_found].length1 = depth;
+                p1_found++;
+            } else if (finish[sym] == 0) {
+                fullcube_copy(&p1_out[p1_found], fc);
+                fullcube_move(&p1_out[p1_found], 24);  /* Fw */
+                fullcube_move(&p1_out[p1_found], 35);  /* Bw' */
+                p1_out[p1_found].length1 = depth + 2;
+                p1_found++;
+            } else if (finish[sym] == 12869) {
+                fullcube_copy(&p1_out[p1_found], fc);
+                fullcube_move(&p1_out[p1_found], 18);  /* Uw */
+                fullcube_move(&p1_out[p1_found], 29);  /* Dw' */
+                p1_out[p1_found].length1 = depth + 2;
+                p1_found++;
+            }
         }
         return;
     }
 
     if (depth == bound) return;
 
-    for (int m = 0; m < 36; m++) {
-        if (prev_move < 36 && ckmv[prev_move][m]) {
+    for (int m = 0; m < 27; m++) {
+        if (prev_move < 27 && ckmv[prev_move][m]) {
             m = skip_axis[m] - 1;
             continue;
         }
@@ -89,18 +98,15 @@ int search1(const FullCube *state, FullCube *out, int max_out) {
             if (pruns[urf] > bound) continue;
             FullCube fc;
             fullcube_copy(&fc, state);
-            search1_ida(&fc, 0, bound, coords[urf], syms[urf], 36);
+            search1_ida(&fc, 0, bound, coords[urf], syms[urf], 27);
         }
     }
     return p1_found;
 }
 
 /* -------------------------------------------------------------------------
- * Phase 2 -- Beam search over best Phase-1 results.
- *
- * For each Phase-1 FullCube, runs IDA* over (rl × ct) Center2 coordinate.
- * Move set: 28 moves (move2std).
- * Keeps top SEARCH_BEAM2_MAX solutions by total move count.
+ * Phase 2 -- IDA* over Center2 (rl × ct) coordinate.
+ * Move set: 28 moves.
  * ------------------------------------------------------------------------- */
 
 static int p2_found;
@@ -113,8 +119,7 @@ static void search2_ida(FullCube *fc, int depth, int bound,
     if (h > bound - depth) return;
 
     if (center2_is_solved(rl, ct_coord) && p2_found < p2_max) {
-        /* Gate: edges must be paired before entering Phase 3.
-         * Apply buffered moves to a throwaway copy to avoid corrupting edge_avail. */
+        /* Check edge pairing on a throwaway copy (avoids corrupting edge_avail). */
         EdgeCube tmp_edge = fc->edge;
         for (int j = fc->edge_avail; j < fc->move_length; j++)
             edge_cube_move(&tmp_edge, fc->move_buffer[j]);
@@ -159,8 +164,7 @@ int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
         EdgeCube   *ec = fullcube_get_edge(&fc);
         Center2State c2s;
         center2_set(&c2s, cc->ct, parity_u8(ec->ep, 24));
-        /* Validate ct invariant: exactly 8 of positions 0-14 must differ from
-         * position 15 for the C(15,8) coordinate to be well-defined. */
+        /* Validate C(15,8) invariant: exactly 8 of positions 0-14 differ from 15. */
         int diff = 0;
         for (int k = 0; k < 15; k++)
             if (c2s.ct[k] != c2s.ct[15]) diff++;
@@ -209,9 +213,7 @@ int search2(const FullCube *p1, int n1, FullCube *out, int max_out) {
 }
 
 /* -------------------------------------------------------------------------
- * Phase 3 -- IDA* over joint coordinate.
- *
- * Move set: 20 moves (move3std).
+ * Phase 3 -- IDA* over (Center3 × Edge3).  Move set: 20 moves.
  * ------------------------------------------------------------------------- */
 
 static int p3_done;
@@ -219,10 +221,9 @@ static FullCube p3_result;
 
 static int tempe[21][12];
 
-/* IDA* over (Center3 × Edge3). edge_coord = symcord1*N_RAW+cord2 (sym-reduced).
- * tempe[depth] is the std-normalised Edge3State, seeded by the caller. */
+/* tempe[depth] holds the std-normalised edge permutation, seeded by caller. */
 static void search3_ida(FullCube *fc, int depth, int bound,
-                          int ct, int edge_coord, int prun, int prev_move) {
+                          int ct, int edge_coord, int prev_move) {
     int h_c = c3prun[ct];
     if (h_c > bound - depth) return;
 
@@ -240,10 +241,7 @@ static void search3_ida(FullCube *fc, int depth, int bound,
 
     if (depth == bound) return;
 
-    /* tempe[depth] already populated by caller — no set_from_int needed. */
-
-    int child_prun = (prun + 1) % 3;
-    int remaining  = bound - depth - 1;
+    int remaining = bound - depth - 1;
 
     for (int mi = 0; mi < 17; mi++) {
         if (prev_move < 20 && ckmv3[prev_move][mi]) {
@@ -266,9 +264,9 @@ static void search3_ida(FullCube *fc, int depth, int bound,
         int cord2x         = edge3_getmvrot(tempe[depth], mi * 8 | symx, 10) % EDGE3_RAW_PERMS;
         int new_edge_coord = new_cls * EDGE3_RAW_PERMS + cord2x;
 
-        int h_e2 = edge3_getprun(new_edge_coord);
-        if (h_e2 > remaining) {
-            if (h_e2 > remaining + 1 && mi < 14) mi = skip_axis3[mi] - 1;
+        int new_h_e = edge3_getprun(new_edge_coord);
+        if (new_h_e > remaining) {
+            if (new_h_e > remaining + 1 && mi < 14) mi = skip_axis3[mi] - 1;
             continue;
         }
 
@@ -276,7 +274,7 @@ static void search3_ida(FullCube *fc, int depth, int bound,
             tempe[depth+1][k] = e3cval[mi][tempe[depth][e3cpos[mi][k]]];
 
         fullcube_move(fc, m);
-        search3_ida(fc, depth + 1, bound, nct, new_edge_coord, child_prun, mi);
+        search3_ida(fc, depth + 1, bound, nct, new_edge_coord, mi);
         fc->move_length--;
         if (p3_done) return;
     }
@@ -286,14 +284,14 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
     p3_done = 0;
     if (n2 == 0) return 0;
 
-    /* Precompute P3 coordinates and heuristics; sort by min_total ascending. */
+    /* Precompute coordinates and heuristics; sort by min_total. */
     typedef struct {
         int        p2_idx;
         int        ct;
         int        es0[12];    /* std-normalised edge[], pre-sym rot */
         int        edge_coord; /* sym-reduced */
         int        h_c;
-        int        h_e;        /* 10 if unseen in BFS */
+        int        h_e;        /* exact depth from BFS */
         int        total_base;
         int        min_total;
     } P3Cand;
@@ -360,11 +358,12 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
             int p3_bound = total - c->total_base;
             if (p3_bound > 20) continue;       /* hard cap on P3 length */
             if (c->h_c > p3_bound) continue;
+            if (c->h_e > p3_bound) continue;
 
             FullCube fc;
             fullcube_copy(&fc, &p2[c->p2_idx]);
             memcpy(tempe[0], c->es0, 12 * sizeof(int));
-            search3_ida(&fc, 0, p3_bound, c->ct, c->edge_coord, p3_bound % 3, 20);
+            search3_ida(&fc, 0, p3_bound, c->ct, c->edge_coord, 20);
         }
     }
 
@@ -372,9 +371,6 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
     return 0;
 }
 
-/* -------------------------------------------------------------------------
- * Move string extraction
- * ------------------------------------------------------------------------- */
 
 int get_move_string(const FullCube *result, char *buf, int buf_len) {
     int pos = 0, n = 0;
@@ -389,28 +385,18 @@ int get_move_string(const FullCube *result, char *buf, int buf_len) {
     return n;
 }
 
-/* -------------------------------------------------------------------------
- * Orientation normalization
- *
- * After Phase 3 the cube may be in any of 24 rotational orientations.
- * Apply at most two single-axis rotations to put color 0 on U and color 2 on F.
- * ------------------------------------------------------------------------- */
 void normalize_orientation(FullCube *fc) {
-    /*
-     * face_cg[i]: ct[] index for face i, matching fullcube_to_333_facelet's
-     * center_group table.
-     */
+    /* Matches center_group[] order in fullcube_to_333_facelet. */
     static const int face_cg[6] = {0, 16, 8, 4, 20, 12};
 
     CenterCube *cen = fullcube_get_center(fc);
     int col[6];
     for (int i = 0; i < 6; i++) col[i] = cen->ct[face_cg[i]];
 
-    /* Flush lazy buffering */
     fullcube_get_edge(fc);
     fullcube_get_corner(fc);
 
-    /* x/z-rot to get white top */
+    /* rotate to put U-color on U */
     int u = 0;
     for (int i = 0; i < 6; i++) if (col[i] == 0) { u = i; break; }
 
@@ -423,7 +409,7 @@ void normalize_orientation(FullCube *fc) {
         case 5: fullcube_do_alg(fc, (int[]){Rwx3, Lwx1}, 2); break; /* x  */
     }
 
-    /* y-rot to get green front */
+    /* rotate to put F-color on F */
     cen = fullcube_get_center(fc);
     for (int i = 0; i < 6; i++) col[i] = cen->ct[face_cg[i]];
 
@@ -438,9 +424,6 @@ void normalize_orientation(FullCube *fc) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * Top-level
- * ------------------------------------------------------------------------- */
 
 void tpr_init(void) {
     build_pascal_triangle();

@@ -1,5 +1,5 @@
 CC     = gcc
-CFLAGS = -std=c11 -Wall -Wextra -g \
+CFLAGS = -std=c11 -Wall -Wextra -O3 -march=native \
          -I../4x4-solver/ckociemba/include \
          -I../4x4-solver/include \
          -I../include
