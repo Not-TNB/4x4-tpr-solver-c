@@ -16,11 +16,13 @@ static inline void set_eprun(int idx, int val) {
     eprun_packed[idx >> 4] ^= (uint32_t)(0x3 ^ val) << ((idx & 0xf) << 1);
 }
 
-int      e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
-int      e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
+uint8_t  e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
+uint8_t  e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 
-int      e3cpos[EDGE3_PHASE3_MOVES][12];
-int      e3cval[EDGE3_PHASE3_MOVES][12];
+uint8_t  e3cpos[EDGE3_PHASE3_MOVES][12];
+uint8_t  e3cval[EDGE3_PHASE3_MOVES][12];
+
+uint8_t  e3sym_min_prun[EDGE3_SYM_CLASSES];
 
 /* half_fact[k] = k!/2  (half_fact[0]=half_fact[1]=1) */
 static const int half_fact[13] = {
@@ -36,25 +38,25 @@ void edge3_set_from_int(Edge3State *s, int idx) {
         idx  %= p;
         parity ^= v;
         v <<= 2;
-        s->edge[i] = (int)((val >> v) & 0xf);
+        s->edge[i] = (uint8_t)((val >> v) & 0xf);
         long long m = (1LL << v) - 1;
         val = (val & m) + ((val >> 4) & ~m);
     }
     if ((parity & 1) == 0) {
-        s->edge[11] = (int)val;
+        s->edge[11] = (uint8_t)val;
     } else {
         s->edge[11] = s->edge[10];
-        s->edge[10] = (int)val;
+        s->edge[10] = (uint8_t)val;
     }
-    for (int i = 0; i < 12; i++) s->edgeo[i] = i;
+    for (int i = 0; i < 12; i++) s->edgeo[i] = (uint8_t)i;
 }
 
 void edge3_std(Edge3State *s) {
     for (int i = 0; i < 12; i++)
-        s->temp[s->edgeo[i]] = i;
+        s->temp[s->edgeo[i]] = (uint8_t)i;
     for (int i = 0; i < 12; i++) {
         s->edge[i]  = s->temp[s->edge[i]];
-        s->edgeo[i] = i;
+        s->edgeo[i] = (uint8_t)i;
     }
 }
 
@@ -72,18 +74,18 @@ int edge3_get(const Edge3State *s, int end) {
 
 /* circle(a,b,c,d): d<-c<-b<-a<-d  swap4(a,b,c,d): a↔c,b↔d  swap2(x,y): x↔y */
 
-static void e3_circle(int *a, int p, int q, int r, int s) {
-    int t = a[s]; a[s] = a[r]; a[r] = a[q]; a[q] = a[p]; a[p] = t;
+static void e3_circle(uint8_t *a, int p, int q, int r, int s) {
+    int t = a[s]; a[s] = a[r]; a[r] = a[q]; a[q] = a[p]; a[p] = (uint8_t)t;
 }
-static void e3_swap4(int *a, int p, int q, int r, int s) {
-    int t; t = a[p]; a[p] = a[r]; a[r] = t; t = a[q]; a[q] = a[s]; a[s] = t;
+static void e3_swap4(uint8_t *a, int p, int q, int r, int s) {
+    int t; t = a[p]; a[p] = a[r]; a[r] = (uint8_t)t; t = a[q]; a[q] = a[s]; a[s] = (uint8_t)t;
 }
-static void e3_swap2(int *a, int x, int y) {
-    int t = a[x]; a[x] = a[y]; a[y] = t;
+static void e3_swap2(uint8_t *a, int x, int y) {
+    int t = a[x]; a[x] = a[y]; a[y] = (uint8_t)t;
 }
 
 void edge3_move(Edge3State *s, int p3m) {
-    int *e = s->edge, *o = s->edgeo;
+    uint8_t *e = s->edge, *o = s->edgeo;
     switch (p3m) {
         case 0:  e3_circle(e,0,4,1,5);   e3_circle(o,0,4,1,5);  break; // U
         case 1:  e3_swap4 (e,0,4,1,5);   e3_swap4 (o,0,4,1,5);  break; // U2
@@ -127,16 +129,16 @@ void edge3_move(Edge3State *s, int p3m) {
 }
 
 /* swapx(x,y): swap edge[x] with edgeo[y]. */
-static void e3_swapx(int *edge, int *edgeo, int x, int y) {
-    int t = edge[x]; edge[x] = edgeo[y]; edgeo[y] = t;
+static void e3_swapx(uint8_t *edge, uint8_t *edgeo, int x, int y) {
+    int t = edge[x]; edge[x] = edgeo[y]; edgeo[y] = (uint8_t)t;
 }
 /* circlex(a,b,c,d): edgeo[d]<-edge[c]<-edgeo[b]<-edge[a]<-edgeo[d]. */
-static void e3_circlex(int *edge, int *edgeo, int a, int b, int c, int d) {
-    int t = edgeo[d]; edgeo[d] = edge[c]; edge[c] = edgeo[b]; edgeo[b] = edge[a]; edge[a] = t;
+static void e3_circlex(uint8_t *edge, uint8_t *edgeo, int a, int b, int c, int d) {
+    int t = edgeo[d]; edgeo[d] = edge[c]; edge[c] = edgeo[b]; edgeo[b] = edge[a]; edge[a] = (uint8_t)t;
 }
 
 void edge3_rot(Edge3State *s, int r) {
-    int *e = s->edge, *o = s->edgeo;
+    uint8_t *e = s->edge, *o = s->edgeo;
     switch (r) {
         case 0:
             edge3_move(s, 14);
@@ -174,23 +176,23 @@ static const int FullEdgeMap[12] = {0, 2, 4, 6, 1, 3, 7, 5, 8, 9, 10, 11};
 
 int edge3_set_from_edgecube(Edge3State *s, const uint8_t ep[24]) {
     for (int i = 0; i < 12; i++) {
-        s->temp[i] = i;
-        s->edge[i] = ep[FullEdgeMap[i] + 12] % 12;
+        s->temp[i] = (uint8_t)i;
+        s->edge[i] = (uint8_t)(ep[FullEdgeMap[i] + 12] % 12);
     }
     int parity = 1;  /* FullEdgeMap introduces one transposition */
     for (int i = 0; i < 12; i++) {
         while (s->edge[i] != i) {
             int t       = s->edge[i];
             s->edge[i]  = s->edge[t];
-            s->edge[t]  = t;
+            s->edge[t]  = (uint8_t)t;
             int tmp     = s->temp[i];
             s->temp[i]  = s->temp[t];
-            s->temp[t]  = tmp;
+            s->temp[t]  = (uint8_t)tmp;
             parity     ^= 1;
         }
     }
     for (int i = 0; i < 12; i++) s->edge[i] = s->temp[ep[FullEdgeMap[i]] % 12];
-    for (int i = 0; i < 12; i++) s->edgeo[i] = i;
+    for (int i = 0; i < 12; i++) s->edgeo[i] = (uint8_t)i;
     return parity;
 }
 
@@ -209,11 +211,13 @@ void edge3_init_mvrot(void) {
     }
 }
 
-int edge3_getmvrot(const int *ep, int mr_idx, int end) {
+int edge3_getmvrot(const uint8_t *ep, int mr_idx, int end) {
+    const uint8_t *mov  = e3mvrot [mr_idx];
+    const uint8_t *movo = e3mvroto[mr_idx];
     long long val = 0xba9876543210LL;
     int idx = 0;
     for (int i = 0; i < end; i++) {
-        int v = e3mvroto[mr_idx][ep[e3mvrot[mr_idx][i]]] << 2;
+        int v = movo[ep[mov[i]]] << 2;
         idx = idx * (12 - i) + (int)((val >> v) & 0xf);
         val -= 0x111111111110LL << v;
     }
@@ -305,6 +309,9 @@ void edge3_create_prun(void) {
     set_eprun(0, 0);
     int done = 1;
 
+    memset(e3sym_min_prun, 0xFF, sizeof(e3sym_min_prun));
+    e3sym_min_prun[0] = 0;
+
     Edge3State e3, f3, g3;
 
     for (int depth = 0; done < EDGE3_N_EPRUN; depth++) {
@@ -341,12 +348,16 @@ void edge3_create_prun(void) {
                         /* Backward: mark the unseen entry i whose neighbor is at depth. */
                         set_eprun(i, dep1m3);
                         done++;
+                        if ((uint8_t)(depth + 1) < e3sym_min_prun[i / EDGE3_RAW_PERMS])
+                            e3sym_min_prun[i / EDGE3_RAW_PERMS] = (uint8_t)(depth + 1);
                         break;
                     }
 
                     /* Forward: mark the unseen neighbor idx. */
                     set_eprun(idx, dep1m3);
                     done++;
+                    if ((uint8_t)(depth + 1) < e3sym_min_prun[symcord1x])
+                        e3sym_min_prun[symcord1x] = (uint8_t)(depth + 1);
 
                     uint16_t ss = e3symstate[symcord1x];
                     if (ss == 1) continue;
@@ -389,4 +400,3 @@ void edge3_init(void) {
     edge3_init_sym2raw();
     edge3_create_prun();
 }
-

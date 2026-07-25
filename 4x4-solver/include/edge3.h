@@ -11,9 +11,9 @@
 #define EDGE3_N_EPRUN       (EDGE3_SYM_CLASSES * EDGE3_RAW_PERMS)
 
 typedef struct {
-    int edge[12];
-    int edgeo[12];
-    int temp[12];   /* scratch for std() and set_from_edgecube() */
+    uint8_t edge[12];
+    uint8_t edgeo[12];
+    uint8_t temp[12];   /* scratch for std() and set_from_edgecube() */
 } Edge3State;
 
 /* -------------------------------------------------------------------------
@@ -36,12 +36,14 @@ extern uint32_t eprun_packed[EDGE3_N_EPRUN / 16];
 
 /* mvrot[m*8+r][i]  = where position i lands after move m then rotate r */
 /* mvroto[m*8+r][i] = orientation-tracking counterpart (inverse perm via std) */
-extern int      e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
-extern int      e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
+extern uint8_t  e3mvrot [EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
+extern uint8_t  e3mvroto[EDGE3_PHASE3_MOVES * EDGE3_SYM_COUNT][12];
 
 /* Compact r=0 slices of e3mvrot/e3mvroto for combined move+std update */
-extern int e3cpos[EDGE3_PHASE3_MOVES][12];
-extern int e3cval[EDGE3_PHASE3_MOVES][12];
+extern uint8_t e3cpos[EDGE3_PHASE3_MOVES][12];
+extern uint8_t e3cval[EDGE3_PHASE3_MOVES][12];
+
+extern uint8_t e3sym_min_prun[EDGE3_SYM_CLASSES];
 
 /* Decode cord1*N_RAW+cord2 into s->edge[]; sets edgeo[i]=i. */
 void edge3_set_from_int(Edge3State *s, int idx);
@@ -65,7 +67,7 @@ int  edge3_set_from_edgecube(Edge3State *s, const uint8_t ep[24]);
 
 /* Lehmer rank of first end elements of ep[] after move+rotation mr_idx=(move*8+rot),
  * without modifying ep[].  end=4 -> cord1; end=10 -> caller takes %N_RAW for cord2. */
-int edge3_getmvrot(const int *ep, int mr_idx, int end);
+int edge3_getmvrot(const uint8_t *ep, int mr_idx, int end);
 
 /* Fast lookup for IDA* inner loop: recovers depth from 2-bit mod-3 encoding
  * using prun (the current node's estimated depth-to-go) as a disambiguation
