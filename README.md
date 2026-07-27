@@ -61,7 +61,7 @@ Benchmarked on 1000 random 60-move scrambles (Apple M-series, `-O3 -march=native
      48     | ###################            | 193   19%
      49     | #######                        |  80    8%
      50     | #                              |  20    2%
-     51     |                                |   7    0%                              |   3    0%
+     51     |                                |   7    0%
 ```
 
 God's number for the 4×4 is within the range of 35–55 moves (OBTM),
