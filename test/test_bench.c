@@ -297,19 +297,19 @@ int main(int argc, char **argv) {
            n_solved, n_scrambles, 100.0 * n_solved / n_scrambles);
 
     static const struct { double lo, hi; const char *label; } TIME_BINS[] = {
-        {0,       10,    "<10ms    "},
-        {10,      50,    "10-50ms  "},
-        {50,      100,   "50-100ms "},
-        {100,     200,   "100-200ms"},
-        {200,     300,   "200-300ms"},
-        {300,     500,   "300-500ms"},
-        {500,     1000,  "0.5-1s   "},
-        {1000,    2000,  "1-2s     "},
-        {2000,    5000,  "2-5s     "},
-        {5000,    10000, "5-10s    "},
-        {10000,   30000, "10-30s   "},
-        {30000,   60000, "30-60s   "},
-        {60000,   1e18,  ">60s     "},
+        {0,    25,   "0-25ms    "},
+        {25,   50,   "25-50ms   "},
+        {50,   75,   "50-75ms   "},
+        {75,   100,  "75-100ms  "},
+        {100,  125,  "100-125ms "},
+        {125,  150,  "125-150ms "},
+        {150,  175,  "150-175ms "},
+        {175,  200,  "175-200ms "},
+        {200,  250,  "200-250ms "},
+        {250,  300,  "250-300ms "},
+        {300,  500,  "300-500ms "},
+        {500,  1000, "500-1000ms"},
+        {1000, 1e18, ">1000ms   "},
     };
     int n_tbins = (int)(sizeof(TIME_BINS) / sizeof(TIME_BINS[0]));
     int t_hist[13] = {0};
@@ -325,7 +325,7 @@ int main(int argc, char **argv) {
 
     printf("\n  Time distribution:\n");
     for (int b = 0; b < n_tbins; b++) {
-        printf("    %-9s | ", TIME_BINS[b].label);
+        printf("    %-10s | ", TIME_BINS[b].label);
         print_bar(t_hist[b], t_hist_max);
         printf(" | %3d  %3d%%\n",
                t_hist[b], t_hist[b] * 100 / n_scrambles);

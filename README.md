@@ -11,7 +11,48 @@ Three IDA\* phases reduce the cube to an equivalent 3×3, then [ckociemba](https
 - **Phase 3** — pair all 12 dedges and finish remaining centres jointly (29,400 × 31M state space)
 - **Phase 4** — ckociemba 3×3 finish
 
-## Build & run
+## Performance
+
+Benchmarked on 2000 random 60-move scrambles (Apple M-series, `-O3 -march=native -flto`):
+
+```
+> TPR_SEED=0x12345678 ./test_bench 2000
+
+  Time  (ms):   min      3.2   max    630.3   mean     95.3   std     64.4
+  Moves:        min       42   max       51   mean     46.7
+
+  Time distribution:
+    0-25ms     | ############                   | 182    9%
+    25-50ms    | ############################## | 432   21%
+    50-75ms    | ####################           | 299   14%
+    75-100ms   | ###############                | 217   10%
+    100-125ms  | ################               | 239   11%
+    125-150ms  | ###################            | 275   13%
+    150-175ms  | ############                   | 179    8%
+    175-200ms  | #####                          |  80    4%
+    200-250ms  | ###                            |  55    2%
+    250-300ms  | #                              |  26    1%
+    300-500ms  |                                |  12    0%
+    500-1000ms |                                |   4    0%
+    >1000ms    |                                |   0    0%
+
+  Moves distribution:
+     42     |                                |   5    0%
+     43     | #                              |  23    1%
+     44     | ####                           |  88    4%
+     45     | ##########                     | 217   10%
+     46     | ########################       | 501   25%
+     47     | ############################## | 606   30%
+     48     | #################              | 355   17%
+     49     | ########                       | 165    8%
+     50     | #                              |  35    1%
+     51     |                                |   5    0%
+```
+
+God's number for the 4×4 is within the range of 35–55 moves (OBTM),
+so the solution move range is satisfactory.
+
+## Build & Run
 
 ```bash
 cd test
@@ -85,50 +126,3 @@ an absolute path when the working directory is not predictable.
 and `CKOCIEMBA_SRCS`, add `-I 4x4-solver/ckociemba/include -I 4x4-solver/include`,
 and link with `-lm`. The `-flto -O3 -march=native` flags are recommended for
 performance.
-
-## Performance
-
-Benchmarked on 1000 random 60-move scrambles (Apple M-series, `-O3 -march=native -flto`):
-
-```
-> TPR_SEED=0x6A633123 ./test_bench 1000
-
-  Time  (ms):   min      3.7   max    491.8   mean     98.1   std     67.7
-  Moves:        min       38   max       51   mean     46.8
-
-  Solved: 1000 / 1000  (100%)
-
-  Time distribution:
-    <10ms     |                                |  11    1%
-    10-50ms   | #####################          | 282   28%
-    50-100ms  | ###################            | 261   26%
-    100-200ms | ############################## | 392   39%
-    200-300ms | ##                             |  36    3%
-    300-500ms | #                              |  18    1%
-    0.5-1s    |                                |   0    0%
-    1-2s      |                                |   0    0%
-    2-5s      |                                |   0    0%
-    5-10s     |                                |   0    0%
-    10-30s    |                                |   0    0%
-    30-60s    |                                |   0    0%
-    >60s      |                                |   0    0%
-
-  Moves distribution:
-     38     |                                |   1    0%
-     39     |                                |   1    0%
-     40     |                                |   0    0%
-     41     |                                |   0    0%
-     42     |                                |   0    0%
-     43     | #                              |  15    1%
-     44     | ####                           |  47    4%
-     45     | #########                      |  94    9%
-     46     | #######################        | 238   23%
-     47     | ############################## | 304   30%
-     48     | ###################            | 193   19%
-     49     | #######                        |  80    8%
-     50     | #                              |  20    2%
-     51     |                                |   7    0%
-```
-
-God's number for the 4×4 is within the range of 35–55 moves (OBTM),
-so the solution move range is satisfactory.
