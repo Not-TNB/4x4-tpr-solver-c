@@ -65,17 +65,39 @@ void edge3_rotate(Edge3State *s, int r);
 /* Convert EdgeCube ep[24] to Edge3State. Returns parity (1=odd). */
 int  edge3_set_from_edgecube(Edge3State *s, const uint8_t ep[24]);
 
-/* Lehmer rank of first end elements of ep[] after move+rotation mr_idx=(move*8+rot),
- * without modifying ep[].  end=4 -> cord1; end=10 -> caller takes %N_RAW for cord2. */
+/* Lehmer rank of ep[] after move+rotation mr_idx. end=4→cord1; end=10→cord2 (caller takes %N_RAW). */
 int edge3_getmvrot(const uint8_t *ep, int mr_idx, int end);
 
-/* Fast lookup for IDA* inner loop: recovers depth from 2-bit mod-3 encoding
- * using prun (the current node's estimated depth-to-go) as a disambiguation
- * anchor.  Returns EDGE3_MAX_DEPTH for the unseen sentinel (0x3). */
+/* Fixed-bound specializations: compiler can fully unroll. */
+static inline int edge3_getmvrot4(const uint8_t *ep, int mr_idx) {
+    const uint8_t *mov  = e3mvrot [mr_idx];
+    const uint8_t *movo = e3mvroto[mr_idx];
+    long long val = 0xba9876543210LL;
+    int idx = 0;
+    for (int i = 0; i < 4; i++) {
+        int v = movo[ep[mov[i]]] << 2;
+        idx = idx * (12 - i) + (int)((val >> v) & 0xf);
+        val -= 0x111111111110LL << v;
+    }
+    return idx;
+}
+static inline int edge3_getmvrot10(const uint8_t *ep, int mr_idx) {
+    const uint8_t *mov  = e3mvrot [mr_idx];
+    const uint8_t *movo = e3mvroto[mr_idx];
+    long long val = 0xba9876543210LL;
+    int idx = 0;
+    for (int i = 0; i < 10; i++) {
+        int v = movo[ep[mov[i]]] << 2;
+        idx = idx * (12 - i) + (int)((val >> v) & 0xf);
+        val -= 0x111111111110LL << v;
+    }
+    return idx;
+}
+
+/* Recover depth from 2-bit mod-3 pruning table; prun disambiguates. Returns EDGE3_MAX_DEPTH for unseen. */
 int edge3_getprun(int edge_coord, int prun);
 
-/* Exact depth via backward BFS trace.  O(depth * 17) coord computations;
- * call once per Phase-3 candidate, not inside the IDA* loop. */
+/* Exact depth via backward BFS; call once per P3 candidate, not inside the IDA* loop. */
 int edge3_getprun_init(int edge_coord);
 
 void edge3_init_mvrot(void);

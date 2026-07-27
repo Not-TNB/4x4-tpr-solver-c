@@ -37,11 +37,24 @@ typedef struct {
     int  eparity;      /* parity bit */
 } SearchState;
 
-/* Rotate to canonical orientation (U-color on U, F-color on F) after Phase 3. */
+/* Per-solve diagnostics, reset each call. */
+typedef struct {
+    long long p3_nodes;   /* IDA* nodes expanded in search3_ida */
+    int       p3_bound;   /* IDA* depth at solution */
+    int       n_cands;    /* Phase-2 → Phase-3 candidates */
+    int       h_e_best;   /* h_e of the winning P3 candidate */
+    int       h_c_best;   /* h_c of the winning P3 candidate */
+    double    p1_ms;
+    double    p2_ms;
+    double    p3_ms;
+    int       n1;         /* Phase-1 beam size */
+} TprDiag;
+extern TprDiag tpr_diag;
+
+/* Rotate to canonical orientation after Phase 3. */
 void normalize_orientation(FullCube *fc);
 
-/* Solve from a 96-char facelet string (6×16, "URFDLB" order).
- * Writes move string into buf; returns total move count, or -1 on failure. */
+/* Solve from a 96-char facelet string; writes move string into buf, returns move count or -1. */
 int tpr_solve(const char *facelet96, char *buf, int buf_len);
 
 /* Build all phase tables. Must be called once before tpr_solve(). */

@@ -1,6 +1,7 @@
 #include "../ckociemba/include/search.h"
 #include "../include/search.h"
 #include "../include/cubie.h"
+#include <time.h>
 #include "../include/center1.h"
 #include "../include/center2.h"
 #include "../include/center3.h"
@@ -10,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 /* -------------------------------------------------------------------------
  * Phase 1 -- IDA* over Center1 sym-class coordinate.
@@ -221,13 +223,12 @@ static FullCube p3_result;
 
 static uint8_t tempe[21][12];
 
+TprDiag tpr_diag;
+
 /* tempe[depth] holds the std-normalised edge permutation, seeded by caller. */
 static void search3_ida(FullCube *fc, int depth, int bound,
                           int ct, int edge_coord, int edge_prun, int prev_move) {
-    int h_c = c3prun[ct];
-    if (h_c > bound - depth) return;
-    if (edge_prun > bound - depth) return;
-
+    tpr_diag.p3_nodes++;
     if (ct == 0 && edge_coord == 0) {
         FullCube tmp;
         fullcube_copy(&tmp, fc);
@@ -255,12 +256,12 @@ static void search3_ida(FullCube *fc, int depth, int bound,
             continue;
         }
 
-        int cord1x         = edge3_getmvrot(tempe[depth], mi * 8, 4);
+        int cord1x         = edge3_getmvrot4(tempe[depth], mi * 8);
         int sym_raw        = e3raw2sym[cord1x];
         int symx           = sym_raw & 7;
         int new_cls        = sym_raw >> 3;
         if (e3sym_min_prun[new_cls] > remaining) continue;
-        int cord2x         = edge3_getmvrot(tempe[depth], mi * 8 | symx, 10) % EDGE3_RAW_PERMS;
+        int cord2x         = edge3_getmvrot10(tempe[depth], mi * 8 | symx) % EDGE3_RAW_PERMS;
         int new_edge_coord = new_cls * EDGE3_RAW_PERMS + cord2x;
 
         int new_h_e = edge3_getprun(new_edge_coord, edge_prun);
@@ -281,6 +282,12 @@ static void search3_ida(FullCube *fc, int depth, int bound,
 
 int search3(const FullCube *p2, int n2, FullCube *result) {
     p3_done = 0;
+    tpr_diag.p3_nodes = 0;
+    tpr_diag.p3_bound = 0;
+    tpr_diag.n_cands  = n2;
+    tpr_diag.h_e_best = -1;
+    tpr_diag.h_c_best = -1;
+    /* p1_ms/p2_ms/n1 set by tpr_solve; p3_ms set below */
     if (n2 == 0) return 0;
 
     /* Precompute coordinates and heuristics; sort by min_total. */
@@ -362,7 +369,13 @@ int search3(const FullCube *p2, int n2, FullCube *result) {
             FullCube fc;
             fullcube_copy(&fc, &p2[c->p2_idx]);
             memcpy(tempe[0], c->es0, 12);
+            if (tpr_diag.h_e_best < 0) {
+                tpr_diag.h_e_best = c->h_e;
+                tpr_diag.h_c_best = c->h_c;
+                tpr_diag.p3_bound = p3_bound;
+            }
             search3_ida(&fc, 0, p3_bound, c->ct, c->edge_coord, c->h_e, 20);
+            if (p3_done) tpr_diag.p3_bound = p3_bound;
         }
     }
 
@@ -434,20 +447,37 @@ void tpr_init(void) {
     edge3_init();
 }
 
+static double ms_since(struct timespec t0) {
+    struct timespec t1;
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    return (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) * 1e-6;
+}
+
 int tpr_solve(const char *facelet96, char *buf, int buf_len) {
+    tpr_diag.p1_ms = 0; tpr_diag.p2_ms = 0; tpr_diag.p3_ms = 0;
+    tpr_diag.n1 = 0;
+
     FullCube state;
     fullcube_from_facelet(&state, facelet96);
 
+    struct timespec tp;
     FullCube beam1[SEARCH_BEAM1_MAX];
+    clock_gettime(CLOCK_MONOTONIC, &tp);
     int n1 = search1(&state, beam1, SEARCH_BEAM1_MAX);
+    tpr_diag.p1_ms = ms_since(tp);
+    tpr_diag.n1 = n1;
     if (n1 == 0) return -1;
 
     FullCube beam2[SEARCH_BEAM2_MAX];
+    clock_gettime(CLOCK_MONOTONIC, &tp);
     int n2 = search2(beam1, n1, beam2, SEARCH_BEAM2_MAX);
+    tpr_diag.p2_ms = ms_since(tp);
     if (n2 == 0) return -1;
 
     FullCube result;
+    clock_gettime(CLOCK_MONOTONIC, &tp);
     if (!search3(beam2, n2, &result)) return -1;
+    tpr_diag.p3_ms = ms_since(tp);
 
     normalize_orientation(&result);
 
@@ -464,8 +494,24 @@ int tpr_solve(const char *facelet96, char *buf, int buf_len) {
     for (int i = 0; i < 54; i++)
         facelet54[i] = cmap[(unsigned char)facelet54[i]];
 
-    char *sol_333 = solution(facelet54, 20, 1000, 0,
-        "../4x4-solver/ckociemba/cprunetables");
+    /* solution() returns NULL for OLL parity (instant) and timeout (takes
+     * exactly timeOut seconds). Distinguish by measuring elapsed time. */
+    static const char *KOK_PATH = "../4x4-solver/ckociemba/cprunetables";
+    struct timespec t_kok;
+    clock_gettime(CLOCK_MONOTONIC, &t_kok);
+    char *sol_333 = solution(facelet54, 20, 2, 0, KOK_PATH);
+    bool sol_instant = (ms_since(t_kok) < 100.0);
+
+    if (sol_333 == NULL && sol_instant) {
+        /* OLL parity: verification fails before the timer starts.
+         * Swap one wing-pair (invisible on non-supercube) and retry. */
+        char tmp = facelet54[7]; facelet54[7] = facelet54[19]; facelet54[19] = tmp;
+        sol_333 = solution(facelet54, 20, 2, 0, KOK_PATH);
+    }
+    if (sol_333 == NULL) {
+        /* Timeout: relax maxDepth so more Phase-1 splits become reachable. */
+        sol_333 = solution(facelet54, 25, 60, 0, KOK_PATH);
+    }
 
     if (sol_333) {
         int pos = (int)strlen(buf);

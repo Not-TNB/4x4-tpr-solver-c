@@ -28,10 +28,6 @@
 #define BAR_WIDTH     30
 #define DEFAULT_N     10
 
-/* -------------------------------------------------------------------------
- * Helpers
- * ------------------------------------------------------------------------- */
-
 static int count_digits(int n) {
     int d = 1;
     while (n >= 10) { d++; n /= 10; }
@@ -47,10 +43,6 @@ static void print_bar(int count, int max_count) {
     for (int i = 0; i < filled; i++) putchar('#');
     for (int i = filled; i < BAR_WIDTH; i++) putchar(' ');
 }
-
-/* -------------------------------------------------------------------------
- * LCG scramble generator (same as test_basic)
- * ------------------------------------------------------------------------- */
 
 static int lcg(unsigned int *s) {
     *s = *s * 1664525u + 1013904223u;
@@ -68,10 +60,6 @@ static void gen_scramble(int *moves, int n, unsigned int *seed) {
     }
 }
 
-/* -------------------------------------------------------------------------
- * Kociemba move parser
- * ------------------------------------------------------------------------- */
-
 static int kok_str_to_move(const char *s) {
     int base;
     switch (s[0]) {
@@ -88,10 +76,6 @@ static int kok_str_to_move(const char *s) {
     if (s[1] == '\'') return base + 2;
     return -1;
 }
-
-/* -------------------------------------------------------------------------
- * Solved-state check
- * ------------------------------------------------------------------------- */
 
 static const int SOLVED_CT[24] = {
     0,0,0,0,  /* U */
@@ -114,50 +98,66 @@ static bool goal_solved(const FullCube *fc) {
     return true;
 }
 
-/* -------------------------------------------------------------------------
- * Beam storage (static to avoid large stack frames)
- * ------------------------------------------------------------------------- */
-
+/* static: too large for the stack */
 static FullCube s_p1[SEARCH_BEAM1_MAX];
 static FullCube s_p2[SEARCH_BEAM2_MAX];
 static FullCube s_p3;
 
-/* -------------------------------------------------------------------------
- * Single-scramble solver
- * ------------------------------------------------------------------------- */
-
 typedef struct {
-    bool   solved;
-    double ms;
-    int    total_moves;   /* solution length (excluding scramble) */
+    bool      solved;
+    double    ms;
+    int       total_moves;
+    TprDiag   diag;
 } BenchResult;
 
-static BenchResult run_one(const FullCube *scrambled) {
-    BenchResult r = {false, 0.0, 0};
+static double elapsed_ms(struct timespec t0) {
+    struct timespec t1;
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    return (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) * 1e-6;
+}
 
-    struct timespec t0, t1;
+static BenchResult run_one(const FullCube *scrambled) {
+    BenchResult r = {false, 0.0, 0, {0}};
+
+    struct timespec t0, tp;
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
+    clock_gettime(CLOCK_MONOTONIC, &tp);
     int n1 = search1(scrambled, s_p1, SEARCH_BEAM1_MAX);
+    tpr_diag.p1_ms = elapsed_ms(tp);
+    tpr_diag.n1    = n1;
     if (n1 == 0) goto done;
 
+    clock_gettime(CLOCK_MONOTONIC, &tp);
     int n2 = search2(s_p1, n1, s_p2, SEARCH_BEAM2_MAX);
+    tpr_diag.p2_ms = elapsed_ms(tp);
     if (n2 == 0) goto done;
 
+    clock_gettime(CLOCK_MONOTONIC, &tp);
     int n3 = search3(s_p2, n2, &s_p3);
+    tpr_diag.p3_ms = elapsed_ms(tp);
     if (n3 == 0) goto done;
 
     {
         normalize_orientation(&s_p3);
         char facelet54[55];
         fullcube_to_333_facelet(&s_p3, facelet54);
-        char *kok = solution(facelet54, 20, 1000, 0,
-                             "../4x4-solver/ckociemba/cprunetables");
-        if (!kok) {
+        /* solution() returns NULL for both OLL parity (instant) and timeout;
+         * elapsed time distinguishes them. */
+#define KOK_PATH "../4x4-solver/ckociemba/cprunetables"
+        struct timespec t_kok;
+        clock_gettime(CLOCK_MONOTONIC, &t_kok);
+        char *kok = solution(facelet54, 20, 2, 0, KOK_PATH);
+        bool kok_instant = (elapsed_ms(t_kok) < 100.0);
+
+        if (kok == NULL && kok_instant) {
+            /* OLL parity: swap one wing-pair (invisible on non-supercube). */
             char tmp = facelet54[7]; facelet54[7] = facelet54[19]; facelet54[19] = tmp;
-            kok = solution(facelet54, 20, 1000, 0,
-                           "../4x4-solver/ckociemba/cprunetables");
+            kok = solution(facelet54, 20, 2, 0, KOK_PATH);
         }
+        if (kok == NULL)
+            kok = solution(facelet54, 25, 60, 0, KOK_PATH);
+#undef KOK_PATH
         if (kok) {
             if (kok[0] != 'E') {
                 int tpr_len = s_p3.length1 + s_p3.length2 + s_p3.length3;
@@ -178,14 +178,10 @@ static BenchResult run_one(const FullCube *scrambled) {
     }
 
 done:
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    r.ms = (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) * 1e-6;
+    r.ms   = elapsed_ms(t0);
+    r.diag = tpr_diag;
     return r;
 }
-
-/* -------------------------------------------------------------------------
- * main
- * ------------------------------------------------------------------------- */
 
 int main(int argc, char **argv) {
     int n_scrambles = DEFAULT_N;
@@ -212,21 +208,13 @@ int main(int argc, char **argv) {
            (init1.tv_sec - init0.tv_sec) * 1e3
            + (init1.tv_nsec - init0.tv_nsec) * 1e-6);
 
-    /* Column widths:
-     *   col_idx  = len("[NNN]") for the largest index
-     *   col_mv   = 5  ("moves")
-     *   col_time = 9  ("%7.1fms" or "%8.2fs", both 9 chars)
-     */
     int idx_digits = count_digits(n_scrambles);
     int col_idx    = idx_digits + 2;   /* '[' + digits + ']' */
     int col_mv     = 5;
     int col_time   = 9;
 
-    /* Header */
     printf("  %-*s | %-*s | %-*s | result\n",
            col_idx, "#", col_mv, "moves", col_time, "time");
-
-    /* Separator — mirrors header exactly: col + "-+-" + col + ... */
     printf("  ");
     print_dashes(col_idx);
     printf("-+-");
@@ -236,8 +224,11 @@ int main(int argc, char **argv) {
     printf("-+-");
     printf("------\n");
 
-    double *times       = calloc((size_t)n_scrambles, sizeof(double));
-    int    *move_counts = calloc((size_t)n_scrambles, sizeof(int));
+    double   *times       = calloc((size_t)n_scrambles, sizeof(double));
+    int      *move_counts = calloc((size_t)n_scrambles, sizeof(int));
+    TprDiag  *diags       = calloc((size_t)n_scrambles, sizeof(TprDiag));
+    int    (*scramble_store)[SCRAMBLE_LEN] =
+        calloc((size_t)n_scrambles, SCRAMBLE_LEN * sizeof(int));
     int     n_solved    = 0;
 
     for (int i = 0; i < n_scrambles; i++) {
@@ -247,12 +238,14 @@ int main(int argc, char **argv) {
         FullCube sc;
         fullcube_from_moves(&sc, scramble, SCRAMBLE_LEN);
 
+        memcpy(scramble_store[i], scramble, SCRAMBLE_LEN * sizeof(int));
+
         BenchResult r = run_one(&sc);
         times[i]       = r.ms;
         move_counts[i] = r.total_moves;
+        diags[i]       = r.diag;
         if (r.solved) n_solved++;
 
-        /* Right-aligned time string, always col_time chars wide */
         char tmbuf[16];
         if (r.ms < 1000.0) snprintf(tmbuf, sizeof(tmbuf), "%7.1fms", r.ms);
         else                snprintf(tmbuf, sizeof(tmbuf), "%8.2fs",  r.ms / 1000.0);
@@ -267,7 +260,6 @@ int main(int argc, char **argv) {
                r.solved ? C_GREEN "SOLVED" C_RESET : C_RED "FAIL" C_RESET);
     }
 
-    /* ---- Aggregate stats ---- */
     printf("\n" C_BOLD "=== Stats (%d/%d solved) ===" C_RESET "\n\n",
            n_solved, n_scrambles);
 
@@ -302,7 +294,6 @@ int main(int argc, char **argv) {
     printf("\n  Solved: %d / %d  (%.0f%%)\n",
            n_solved, n_scrambles, 100.0 * n_solved / n_scrambles);
 
-    /* ---- Time distribution bar chart ---- */
     static const struct { double lo, hi; const char *label; } TIME_BINS[] = {
         {0,       10,    "<10ms    "},
         {10,      50,    "10-50ms  "},
@@ -338,7 +329,6 @@ int main(int argc, char **argv) {
                t_hist[b], t_hist[b] * 100 / n_scrambles);
     }
 
-    /* ---- Moves distribution bar chart ---- */
     if (n_mv > 0) {
         int range    = (int)m_max - (int)m_min + 1;
         int bin_size = (range > 30) ? 2 : 1;
@@ -373,7 +363,39 @@ int main(int argc, char **argv) {
         free(m_hist);
     }
 
+    int top_k = (n_scrambles <= 10) ? n_scrambles : 10;
+    int *order = calloc((size_t)n_scrambles, sizeof(int));
+    for (int i = 0; i < n_scrambles; i++) order[i] = i;
+    for (int i = 0; i < top_k; i++) {
+        for (int j = i + 1; j < n_scrambles; j++) {
+            if (times[order[j]] > times[order[i]]) {
+                int tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+            }
+        }
+    }
+
+    printf("\n" C_BOLD "=== Top %d slowest solves ===" C_RESET "\n\n", top_k);
+    for (int r = 0; r < top_k; r++) {
+        int idx = order[r];
+        printf("  %2d. ", r + 1);
+        for (int j = 0; j < SCRAMBLE_LEN; j++) {
+            printf("%s", move2str[scramble_store[idx][j]]);
+            if (j < SCRAMBLE_LEN - 1) putchar(' ');
+        }
+        if (times[idx] < 1000.0)
+            printf("  |  %.1fms", times[idx]);
+        else
+            printf("  |  %.2fs",  times[idx] / 1000.0);
+        TprDiag *d = &diags[idx];
+        printf("  (P1: %.0fms n1=%d | P2: %.0fms | P3: %.0fms  nodes: %lld  bound: %d  h_e: %d  h_c: %d)\n",
+               d->p1_ms, d->n1, d->p2_ms, d->p3_ms,
+               d->p3_nodes, d->p3_bound, d->h_e_best, d->h_c_best);
+    }
+
+    free(order);
+    free(scramble_store);
     free(times);
     free(move_counts);
+    free(diags);
     return (n_solved == n_scrambles) ? 0 : 1;
 }

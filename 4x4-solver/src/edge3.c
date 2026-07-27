@@ -224,6 +224,7 @@ int edge3_getmvrot(const uint8_t *ep, int mr_idx, int end) {
     return idx;
 }
 
+
 int edge3_getprun(int edge_coord, int prun) {
     int depm3 = get_eprun_raw(edge_coord);
     if (depm3 == 0x3) return EDGE3_MAX_DEPTH;
@@ -251,11 +252,11 @@ int edge3_getprun_init(int edge_coord) {
         edge3_set_from_int(&e, cord1 * EDGE3_RAW_PERMS + cord2);
 
         for (int m = 0; m < 17; m++) {
-            int cord1x    = edge3_getmvrot(e.edge, m << 3, 4);
+            int cord1x    = edge3_getmvrot4(e.edge, m << 3);
             int sym_raw   = e3raw2sym[cord1x];
             int symx      = sym_raw & 7;
             int symcord1x = sym_raw >> 3;
-            int cord2x    = edge3_getmvrot(e.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
+            int cord2x    = edge3_getmvrot10(e.edge, (m << 3) | symx) % EDGE3_RAW_PERMS;
             int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
 
             if (get_eprun_raw(idx) == target) {
@@ -335,11 +336,11 @@ void edge3_create_prun(void) {
                 edge3_set_from_int(&e3, cord1 * EDGE3_RAW_PERMS + cord2);
 
                 for (int m = 0; m < 17; m++) {
-                    int cord1x    = edge3_getmvrot(e3.edge, m << 3, 4);
+                    int cord1x    = edge3_getmvrot4(e3.edge, m << 3);
                     int sym_raw   = e3raw2sym[cord1x];
                     int symx      = sym_raw & 7;
                     int symcord1x = sym_raw >> 3;
-                    int cord2x    = edge3_getmvrot(e3.edge, (m << 3) | symx, 10) % EDGE3_RAW_PERMS;
+                    int cord2x    = edge3_getmvrot10(e3.edge, (m << 3) | symx) % EDGE3_RAW_PERMS;
                     int idx       = symcord1x * EDGE3_RAW_PERMS + cord2x;
 
                     if (get_eprun_raw(idx) != chk) continue;
