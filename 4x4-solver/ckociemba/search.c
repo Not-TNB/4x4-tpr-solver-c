@@ -56,7 +56,7 @@ char* solutionToString(search_t* search, int length, int depthPhase1)
 }
 
 
-char* solution(char* facelets, int maxDepth, long timeOut, int useSeparator, const char* cache_dir)
+char* solution(char* facelets, int maxDepth, long long timeOut, int useSeparator, const char* cache_dir)
 {
     search_t* search = (search_t*) calloc(1, sizeof(search_t));
     facecube_t* fc;
@@ -67,7 +67,7 @@ char* solution(char* facelets, int maxDepth, long timeOut, int useSeparator, con
     int mv, n;
     int busy;
     int depthPhase1;
-    time_t tStart;
+    struct timespec tStart;
     // +++++++++++++++++++++check for wrong input +++++++++++++++++++++++++++++
     int count[6] = {0};
 
@@ -130,7 +130,7 @@ char* solution(char* facelets, int maxDepth, long timeOut, int useSeparator, con
     busy = 0;
     depthPhase1 = 1;
 
-    tStart = time(NULL);
+    clock_gettime(CLOCK_MONOTONIC, &tStart);
 
     // +++++++++++++++++++ Main loop ++++++++++++++++++++++++++++++++++++++++++
     do {
@@ -146,12 +146,24 @@ char* solution(char* facelets, int maxDepth, long timeOut, int useSeparator, con
                 do {// increment axis
                     if (++search->ax[n] > 5) {
 
-                        if (time(NULL) - tStart > timeOut)
-                            return NULL;
+                        {
+                            struct timespec tNow;
+                            clock_gettime(CLOCK_MONOTONIC, &tNow);
+                            long long ns = (tNow.tv_sec - tStart.tv_sec) * 1000000000LL
+                                         + (tNow.tv_nsec - tStart.tv_nsec);
+                            if (ns > timeOut * 1000000LL) {
+                                free((void*) search); free((void*) fc);
+                                free((void*) cc); free((void*) c);
+                                return NULL;
+                            }
+                        }
 
                         if (n == 0) {
-                            if (depthPhase1 >= maxDepth)
+                            if (depthPhase1 >= maxDepth) {
+                                free((void*) search); free((void*) fc);
+                                free((void*) cc); free((void*) c);
                                 return NULL;
+                            }
                             else {
                                 depthPhase1++;
                                 search->ax[n] = 0;

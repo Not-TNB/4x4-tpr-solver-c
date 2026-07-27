@@ -494,24 +494,23 @@ int tpr_solve(const char *facelet96, char *buf, int buf_len) {
     for (int i = 0; i < 54; i++)
         facelet54[i] = cmap[(unsigned char)facelet54[i]];
 
-    /* solution() returns NULL for OLL parity (instant) and timeout (takes
-     * exactly timeOut seconds). Distinguish by measuring elapsed time. */
+    /* solution() returns NULL for OLL parity (instant) and timeout.
+     * timeOut is now in ms; elapsed time distinguishes the two NULL causes. */
     static const char *KOK_PATH = "../4x4-solver/ckociemba/cprunetables";
+#define KOK_TIMEOUT_MS 100
     struct timespec t_kok;
     clock_gettime(CLOCK_MONOTONIC, &t_kok);
-    char *sol_333 = solution(facelet54, 20, 2, 0, KOK_PATH);
-    bool sol_instant = (ms_since(t_kok) < 100.0);
+    char *sol_333 = solution(facelet54, 20, KOK_TIMEOUT_MS, 0, KOK_PATH);
+    bool sol_instant = (ms_since(t_kok) < KOK_TIMEOUT_MS / 2.0);
 
     if (sol_333 == NULL && sol_instant) {
-        /* OLL parity: verification fails before the timer starts.
-         * Swap one wing-pair (invisible on non-supercube) and retry. */
+        /* OLL parity: verification fails before the timer starts. */
         char tmp = facelet54[7]; facelet54[7] = facelet54[19]; facelet54[19] = tmp;
-        sol_333 = solution(facelet54, 20, 2, 0, KOK_PATH);
+        sol_333 = solution(facelet54, 20, KOK_TIMEOUT_MS, 0, KOK_PATH);
     }
-    if (sol_333 == NULL) {
-        /* Timeout: relax maxDepth so more Phase-1 splits become reachable. */
-        sol_333 = solution(facelet54, 25, 60, 0, KOK_PATH);
-    }
+    if (sol_333 == NULL)
+        sol_333 = solution(facelet54, 25, 60000, 0, KOK_PATH);
+#undef KOK_TIMEOUT_MS
 
     if (sol_333) {
         int pos = (int)strlen(buf);
