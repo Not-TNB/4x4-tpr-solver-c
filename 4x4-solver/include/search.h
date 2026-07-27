@@ -60,4 +60,9 @@ int tpr_solve(const char *facelet96, char *buf, int buf_len);
 /* Build all phase tables. Must be called once before tpr_solve(). */
 void tpr_init(void);
 
+/* Override the path to the ckociemba pruning-table cache directory.
+ * Default: "../4x4-solver/ckociemba/cprunetables" (correct when CWD is test/).
+ * Call before the first tpr_solve() if running from a different directory. */
+void tpr_set_kok_path(const char *path);
+
 #endif /* SEARCH_H */

@@ -6,6 +6,7 @@ explorer
 test/test_basic
 test/test_bench
 test/gen_scrambles
+test/gen_scrambles.c
 
 # Generated
 compile_commands.json
