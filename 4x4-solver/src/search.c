@@ -13,6 +13,10 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+static const char *kok_path = NULL;
+
+void tpr_set_kok_path(const char *path) { kok_path = path; }
+
 /* -------------------------------------------------------------------------
  * Phase 1 -- IDA* over Center1 sym-class coordinate.
  * Goal: U/D axis oriented.  Move set: 27 moves.
@@ -496,7 +500,7 @@ int tpr_solve(const char *facelet96, char *buf, int buf_len) {
 
     /* solution() returns NULL for OLL parity (instant) and timeout.
      * timeOut is now in ms; elapsed time distinguishes the two NULL causes. */
-    static const char *KOK_PATH = "../4x4-solver/ckociemba/cprunetables";
+    const char *KOK_PATH = kok_path ? kok_path : "../4x4-solver/ckociemba/cprunetables";
 #define KOK_TIMEOUT_MS 100
     struct timespec t_kok;
     clock_gettime(CLOCK_MONOTONIC, &t_kok);

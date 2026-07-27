@@ -143,20 +143,22 @@ static BenchResult run_one(const FullCube *scrambled) {
         char facelet54[55];
         fullcube_to_333_facelet(&s_p3, facelet54);
         /* solution() returns NULL for both OLL parity (instant) and timeout;
-         * elapsed time distinguishes them. */
-#define KOK_PATH "../4x4-solver/ckociemba/cprunetables"
+         * elapsed time distinguishes them. timeOut is in ms. */
+#define KOK_PATH     "../4x4-solver/ckociemba/cprunetables"
+#define KOK_TIMEOUT_MS 100
         struct timespec t_kok;
         clock_gettime(CLOCK_MONOTONIC, &t_kok);
-        char *kok = solution(facelet54, 20, 2, 0, KOK_PATH);
-        bool kok_instant = (elapsed_ms(t_kok) < 100.0);
+        char *kok = solution(facelet54, 20, KOK_TIMEOUT_MS, 0, KOK_PATH);
+        bool kok_instant = (elapsed_ms(t_kok) < KOK_TIMEOUT_MS / 2.0);
 
         if (kok == NULL && kok_instant) {
             /* OLL parity: swap one wing-pair (invisible on non-supercube). */
             char tmp = facelet54[7]; facelet54[7] = facelet54[19]; facelet54[19] = tmp;
-            kok = solution(facelet54, 20, 2, 0, KOK_PATH);
+            kok = solution(facelet54, 20, KOK_TIMEOUT_MS, 0, KOK_PATH);
         }
         if (kok == NULL)
-            kok = solution(facelet54, 25, 60, 0, KOK_PATH);
+            kok = solution(facelet54, 25, 60000, 0, KOK_PATH);
+#undef KOK_TIMEOUT_MS
 #undef KOK_PATH
         if (kok) {
             if (kok[0] != 'E') {

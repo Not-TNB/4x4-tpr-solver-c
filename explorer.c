@@ -2,8 +2,6 @@
 #include "cube4.h"
 #include "4x4-solver/include/search.h"
 #include "4x4-solver/include/cubie.h"
-#include "4x4-solver/ckociemba/include/search.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -103,29 +101,11 @@ static void cube4_to_facelet96(const CubeState4 *s, char buf[97]) {
     buf[96] = '\0';
 }
 
-/* TPR move axis (0-11) -> explorer Face enum */
-static const uint8_t tpr_axis_face[12] = {
-    FACE_U, FACE_R, FACE_F, FACE_D, FACE_L, FACE_B,  /* outer 0-5 */
-    FACE_U, FACE_R, FACE_F, FACE_D, FACE_L, FACE_B,  /* wide  6-11 */
-};
-
-/* Build an explorer Alg from a TPR move buffer (caller must alg_free). */
-static Alg tpr_buf_to_alg(const uint8_t *buf, int len) {
-    Alg a = { .m = malloc((size_t)len * sizeof(Move)), .len = len, .cap = len };
-    for (int i = 0; i < len; i++) {
-        int axis = buf[i] / 3, power = buf[i] % 3;
-        a.m[i] = (Move){
-            .face  = tpr_axis_face[axis],
-            .q     = (uint8_t)(power + 1),      /* TPR 0=CW,1=180,2=CCW -> q 1,2,3 */
-            .depth = (uint8_t)(axis >= 6 ? 2 : 1),
-        };
-    }
-    return a;
-}
 
 static void do_solve(CubeState4 *cube) {
     static int tpr_ready;
     if (!tpr_ready) {
+        tpr_set_kok_path("4x4-solver/ckociemba/cprunetables");
         printf("Initialising TPR tables (first use only)...\n");
         fflush(stdout);
         struct timespec ti0, ti1;
@@ -139,120 +119,35 @@ static void do_solve(CubeState4 *cube) {
     char facelet96[97];
     cube4_to_facelet96(cube, facelet96);
 
-    FullCube state;
-    fullcube_from_facelet(&state, facelet96);
-
-    static FullCube beam1[SEARCH_BEAM1_MAX];
-    static FullCube beam2[SEARCH_BEAM2_MAX];
-    static FullCube p3result;
-
-    struct timespec t0, t1, tsolve0;
-    clock_gettime(CLOCK_MONOTONIC, &tsolve0);
-
-    /* --- Phase 1 --- */
-    printf("  [P1] "); fflush(stdout);
+    char sol_buf[512];
+    struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    int n1 = search1(&state, beam1, SEARCH_BEAM1_MAX);
+    int n_tpr = tpr_solve(facelet96, sol_buf, sizeof(sol_buf));
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    if (n1 > 0) {
-        Alg a = tpr_buf_to_alg(beam1[0].move_buffer, beam1[0].move_length);
-        char *str = alg_to_string(&a);
-        printf("%2d moves  (%.1f ms, %d cands): %s\n",
-               beam1[0].move_length, elapsed_ms(t0, t1), n1, str ? str : "?");
-        free(str);
-        alg_free(&a);
-    } else {
-        printf("no solution found\n");
+
+    if (n_tpr < 0) {
+        printf("  no solution found\n");
+        return;
     }
 
-    /* --- Phase 2 --- */
-    printf("  [P2] "); fflush(stdout);
-    clock_gettime(CLOCK_MONOTONIC, &t0);
-    int n2 = search2(beam1, n1, beam2, SEARCH_BEAM2_MAX);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    if (n2 > 0) {
-        Alg a2 = tpr_buf_to_alg(beam2[0].move_buffer + beam2[0].length1,
-                                  beam2[0].length2);
-        char *str2 = alg_to_string(&a2);
-        printf("%2d moves  (%.1f ms, %d cands): %s\n",
-               beam2[0].length2, elapsed_ms(t0, t1), n2, str2 ? str2 : "?");
-        free(str2);
-        alg_free(&a2);
-    } else {
-        printf("no solution\n");
-    }
+    double total_ms = elapsed_ms(t0, t1);
+    printf("  P1: %.1f ms (%d cands)  P2: %.1f ms  P3: %.1f ms (%lld nodes, bound %d)\n",
+           tpr_diag.p1_ms, tpr_diag.n1,
+           tpr_diag.p2_ms,
+           tpr_diag.p3_ms, tpr_diag.p3_nodes, tpr_diag.p3_bound);
 
-    /* --- Phase 3 --- */
-    printf("  [P3] "); fflush(stdout);
-    clock_gettime(CLOCK_MONOTONIC, &t0);
-    int n3 = n2 > 0 ? search3(beam2, n2, &p3result) : 0;
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    if (n3 > 0) {
-        int l3 = p3result.length3;
-        Alg a3 = tpr_buf_to_alg(p3result.move_buffer + p3result.length1
-                                  + p3result.length2, l3);
-        char *str3 = alg_to_string(&a3);
-        printf("%2d moves  (%.1f ms): %s\n",
-               l3, elapsed_ms(t0, t1), str3 ? str3 : "?");
-        free(str3);
-        alg_free(&a3);
+    Alg a = {0};
+    alg_parse(sol_buf, &a);
+    char *sol_str = alg_to_string(&a);
+    printf("\n  Solution (%d moves, %.1f ms): %s\n", a.len, total_ms,
+           sol_str ? sol_str : sol_buf);
+    free(sol_str);
 
-        /* --- Phase 4: Kociemba 3×3 finish --- */
-        printf("  [P4] "); fflush(stdout);
-        normalize_orientation(&p3result);
-        char facelet54[55];
-        fullcube_to_333_facelet(&p3result, facelet54);
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        char *sol333 = solution(facelet54, 20, 1000, 0,
-                                "4x4-solver/ckociemba/cprunetables");
-        if (!sol333) {
-            /* OLL parity: flip one virtual edge (edge_map[0]=19, edge_map[12]=7).
-             * Both wings of a dedge are identical on a non-supercube, so this is
-             * physically invisible — no moves needed, just fix the representation. */
-            char tmp = facelet54[7]; facelet54[7] = facelet54[19]; facelet54[19] = tmp;
-            sol333 = solution(facelet54, 20, 1000, 0,
-                              "4x4-solver/ckociemba/cprunetables");
-        }
-        clock_gettime(CLOCK_MONOTONIC, &t1);
+    cube4_apply_sequence(cube, &a);
+    alg_free(&a);
 
-        Alg a4 = {0};
-        if (sol333 && strncmp(sol333, "Error", 5) != 0) {
-            alg_parse(sol333, &a4);
-            printf("%2d moves  (%.1f ms): %s\n",
-                   a4.len, elapsed_ms(t0, t1), sol333);
-        } else {
-            printf("kociemba error: %s\n", sol333 ? sol333 : "NULL");
-        }
-        if (sol333) free(sol333);
-
-        /* Full solution: TPR + kociemba */
-        int ltpr = p3result.move_length;
-        Alg atpr = tpr_buf_to_alg(p3result.move_buffer, ltpr);
-        char *stpr = alg_to_string(&atpr);
-        char *s4   = a4.len > 0 ? alg_to_string(&a4) : NULL;
-        double total_ms = elapsed_ms(tsolve0, t1);
-        if (s4) {
-            printf("\n  Solution (%d moves, %.1f ms total): %s %s\n",
-                   ltpr + a4.len, total_ms, stpr ? stpr : "?", s4);
-            free(s4);
-        } else {
-            printf("\n  Solution (%d TPR moves, %.1f ms total): %s\n",
-                   ltpr, total_ms, stpr ? stpr : "?");
-        }
-        free(stpr);
-
-        cube4_apply_sequence(cube, &atpr);
-        alg_free(&atpr);
-
-        if (a4.len > 0) {
-            cube4_apply_sequence(cube, &a4);
-            alg_free(&a4);
-            printf("\n  Final:\n");
-            print_cube(cube);
-        }
-    } else {
-        printf("no solution found\n");
-    }
+    printf("\n  Final:\n");
+    print_cube(cube);
 }
 
 int main(void) {

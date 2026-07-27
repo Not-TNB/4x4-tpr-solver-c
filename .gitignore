@@ -3,6 +3,9 @@
 *.d
 *.a
 explorer
+test/test_basic
+test/test_bench
+test/gen_scrambles
 
 # Generated
 compile_commands.json

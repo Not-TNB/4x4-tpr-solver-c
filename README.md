@@ -20,6 +20,72 @@ make bench        # benchmark 10 scrambles
 ./test_bench N    # benchmark N scrambles (run after make bench)
 ```
 
+## Explorer
+
+An interactive 4×4 cube explorer is included. Build and run from the project root:
+
+```bash
+make
+./explorer
+```
+
+**Move syntax** — standard WCA outer and wide moves:
+
+| Notation | Meaning |
+|----------|---------|
+| `U R F D L B` | outer face, clockwise |
+| `U' R' …` | outer face, counter-clockwise |
+| `U2 R2 …` | outer face, 180° |
+| `Uw Rw Fw Dw Lw Bw` | wide (2-layer), same suffixes apply |
+| `(R U R')3` | repeat a sequence N times |
+
+**Commands:**
+
+| Command | Action |
+|---------|--------|
+| `solve` / `s` | solve the current cube state |
+| `reset` / `r` | return to solved state |
+| `facelet` / `f` | print the 3×3 facelet string for the current state |
+| `q` | quit |
+
+The solve command prints per-phase timing (P1/P2/P3/P4) and the full solution string, then applies the solution so the final state is shown.
+
+## Using `tpr_solve` in your own project
+
+The public API is in `4x4-solver/include/search.h`. Two calls are needed:
+
+```c
+#include "search.h"   // tpr_init, tpr_solve, tpr_set_kok_path
+
+// Once at startup — builds all phase tables (~7 s first run, instant on
+// subsequent runs once ckociemba has written its cache to disk).
+tpr_set_kok_path("/absolute/path/to/4x4-solver/ckociemba/cprunetables");
+tpr_init();
+
+// Per solve — facelet96 is a 96-character string, one character per sticker,
+// row-major within each face, faces in order U R F D L B.
+// Valid characters: U R F D L B (one per face colour).
+char solution[512];
+int n = tpr_solve(facelet96, solution, sizeof(solution));
+// n  >= 0: success; solution[] holds the full move string, e.g. "U Rw2 F' … R U'"
+// n  == -1: no solution found (invalid or unsolvable cube)
+```
+
+**Facelet string format** — 96 characters, faces in order U R F D L B, each face
+read row-major (top-left → bottom-right across a 4×4 grid).  The character for
+each sticker is the face letter of its home colour: `U`=white, `R`=red, `F`=green,
+`D`=yellow, `L`=orange, `B`=blue (or whichever colour scheme you map).
+
+**ckociemba cache** — `tpr_set_kok_path` sets the directory where ckociemba reads
+and writes its pruning tables (~64 MB on disk). If not called, the default path is
+`../4x4-solver/ckociemba/cprunetables` (correct when CWD is `test/`). Call it with
+an absolute path when the working directory is not predictable.
+
+**Compile** — include all sources listed in the root `Makefile` under `SOLVER_SRCS`
+and `CKOCIEMBA_SRCS`, add `-I 4x4-solver/ckociemba/include -I 4x4-solver/include`,
+and link with `-lm`. The `-flto -O3 -march=native` flags are recommended for
+performance.
+
 ## Performance
 
 Benchmarked on 1000 random 60-move scrambles (Apple M-series, `-O3 -march=native -flto`):
