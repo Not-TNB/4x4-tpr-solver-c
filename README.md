@@ -13,7 +13,11 @@ Three IDA\* phases reduce the cube to an equivalent 3×3, then [ckociemba](https
 
 ## Performance
 
-Benchmarked on 2000 random 60-move scrambles (Apple M-series, `-O3 -march=native -flto`):
+Solve time (Apple M4 Max):
+- Mean: 69.5ms
+- Median: 56.6ms
+
+Benchmarked on 2000 random 60-move scrambles (`-O3 -march=native -flto`):
 
 ```
 > TPR_SEED=0x12345678 ./test_bench 2000
@@ -39,16 +43,16 @@ Benchmarked on 2000 random 60-move scrambles (Apple M-series, `-O3 -march=native
     >1000ms    |                                |   0    0%
 
   Moves distribution:
-     42     |                                |   4    0%
-     43     |                                |  11    0%
-     44     | ##                             |  57    2%
-     45     | ######                         | 134    6%
-     46     | ################               | 338   16%
-     47     | #############################  | 598   29%
-     48     | ############################## | 601   30%
-     49     | ##########                     | 217   10%
-     50     | #                              |  38    1%
-     51     |                                |   2    0%
+     42 |                                |   4    0%
+     43 |                                |  11    0%
+     44 | ##                             |  57    2%
+     45 | ######                         | 134    6%
+     46 | ################               | 338   16%
+     47 | #############################  | 598   29%
+     48 | ############################## | 601   30%
+     49 | ##########                     | 217   10%
+     50 | #                              |  38    1%
+     51 |                                |   2    0%
 ```
 
 God's number for the 4×4 is within the range of 35–55 moves (OBTM),
@@ -128,3 +132,8 @@ an absolute path when the working directory is not predictable.
 and `CKOCIEMBA_SRCS`, add `-I 4x4-solver/ckociemba/include -I 4x4-solver/include`,
 and link with `-lm`. The `-flto -O3 -march=native` flags are recommended for
 performance.
+
+## TODO
+- Implement 4x4 supercube solving.
+- Make it so the cube returning to the default orientation (white top green front) is an optional parameter.
+- Further optimizations in solution lengths and solve times.
