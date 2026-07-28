@@ -904,13 +904,28 @@ static PipelineResult run_pipeline(const FullCube *scrambled) {
         normalize_orientation(&s_p3);
         char facelet54[55];
         fullcube_to_333_facelet(&s_p3, facelet54);
-        char *kok = solution(facelet54, 20, 1000, 0,
-                             "../4x4-solver/ckociemba/cprunetables");
-        if (!kok) {
+        /* Phase-4 logic identical to tpr_solve / test_bench: first call at
+         * maxDepth 21 with a 100ms timeout; a NULL that returns near-instantly
+         * is OLL parity (retry after wing swap), a NULL near the timeout is a
+         * genuine stall (fall back to depth 25 / 60s). */
+#define KOK_PATH       "../4x4-solver/ckociemba/cprunetables"
+#define KOK_TIMEOUT_MS 100
+        struct timespec t_kok, t_kok_end;
+        clock_gettime(CLOCK_MONOTONIC, &t_kok);
+        char *kok = solution(facelet54, 21, KOK_TIMEOUT_MS, 0, KOK_PATH);
+        clock_gettime(CLOCK_MONOTONIC, &t_kok_end);
+        double kok_ms = (t_kok_end.tv_sec - t_kok.tv_sec) * 1e3
+                      + (t_kok_end.tv_nsec - t_kok.tv_nsec) * 1e-6;
+        bool kok_instant = (kok_ms < KOK_TIMEOUT_MS / 2.0);
+
+        if (kok == NULL && kok_instant) {
             char tmp = facelet54[7]; facelet54[7] = facelet54[19]; facelet54[19] = tmp;
-            kok = solution(facelet54, 20, 1000, 0,
-                           "../4x4-solver/ckociemba/cprunetables");
+            kok = solution(facelet54, 21, KOK_TIMEOUT_MS, 0, KOK_PATH);
         }
+        if (kok == NULL)
+            kok = solution(facelet54, 25, 60000, 0, KOK_PATH);
+#undef KOK_TIMEOUT_MS
+#undef KOK_PATH
         fprintf(stderr, "kok: '%s'  facelet: %s\n", kok ? kok : "(null)", facelet54);
         if (kok) {
             if (kok[0] != 'E') {

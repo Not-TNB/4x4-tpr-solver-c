@@ -504,13 +504,13 @@ int tpr_solve(const char *facelet96, char *buf, int buf_len) {
 #define KOK_TIMEOUT_MS 100
     struct timespec t_kok;
     clock_gettime(CLOCK_MONOTONIC, &t_kok);
-    char *sol_333 = solution(facelet54, 20, KOK_TIMEOUT_MS, 0, KOK_PATH);
+    char *sol_333 = solution(facelet54, 21, KOK_TIMEOUT_MS, 0, KOK_PATH);
     bool sol_instant = (ms_since(t_kok) < KOK_TIMEOUT_MS / 2.0);
 
     if (sol_333 == NULL && sol_instant) {
         /* OLL parity: verification fails before the timer starts. */
         char tmp = facelet54[7]; facelet54[7] = facelet54[19]; facelet54[19] = tmp;
-        sol_333 = solution(facelet54, 20, KOK_TIMEOUT_MS, 0, KOK_PATH);
+        sol_333 = solution(facelet54, 21, KOK_TIMEOUT_MS, 0, KOK_PATH);
     }
     if (sol_333 == NULL)
         sol_333 = solution(facelet54, 25, 60000, 0, KOK_PATH);

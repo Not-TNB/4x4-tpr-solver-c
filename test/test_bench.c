@@ -148,13 +148,13 @@ static BenchResult run_one(const FullCube *scrambled) {
 #define KOK_TIMEOUT_MS 100
         struct timespec t_kok;
         clock_gettime(CLOCK_MONOTONIC, &t_kok);
-        char *kok = solution(facelet54, 20, KOK_TIMEOUT_MS, 0, KOK_PATH);
+        char *kok = solution(facelet54, 21, KOK_TIMEOUT_MS, 0, KOK_PATH);
         bool kok_instant = (elapsed_ms(t_kok) < KOK_TIMEOUT_MS / 2.0);
 
         if (kok == NULL && kok_instant) {
             /* OLL parity: swap one wing-pair (invisible on non-supercube). */
             char tmp = facelet54[7]; facelet54[7] = facelet54[19]; facelet54[19] = tmp;
-            kok = solution(facelet54, 20, KOK_TIMEOUT_MS, 0, KOK_PATH);
+            kok = solution(facelet54, 21, KOK_TIMEOUT_MS, 0, KOK_PATH);
         }
         if (kok == NULL)
             kok = solution(facelet54, 25, 60000, 0, KOK_PATH);
@@ -293,6 +293,15 @@ int main(int argc, char **argv) {
         printf("  Moves:        min %8.0f   max %8.0f   mean %8.1f\n",
                m_min, m_max, m_mean);
     }
+    /* Phase-3 IDA* node counts are deterministic (independent of machine load),
+     * so they are the reliable metric for A/B-testing search changes. */
+    long long nd_sum = 0, nd_max = 0;
+    for (int i = 0; i < n_scrambles; i++) {
+        nd_sum += diags[i].p3_nodes;
+        if (diags[i].p3_nodes > nd_max) nd_max = diags[i].p3_nodes;
+    }
+    printf("  P3 nodes:     total %-14lld max %-12lld mean %.0f\n",
+           nd_sum, nd_max, (double)nd_sum / n_scrambles);
     printf("\n  Solved: %d / %d  (%.0f%%)\n",
            n_solved, n_scrambles, 100.0 * n_solved / n_scrambles);
 
