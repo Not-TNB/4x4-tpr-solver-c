@@ -25,6 +25,35 @@ int move2std[29] = {
     EOM
 };
 
+/* Conjugate tables for rotations */
+
+int phi_x[18] = {
+    Bx1, Bx2, Bx3,  /* U -> B */
+    Rx1, Rx2, Rx3,  /* R -> R */
+    Ux1, Ux2, Ux3,  /* F -> U */
+    Fx1, Fx2, Fx3,  /* D -> F */
+    Lx1, Lx2, Lx3,  /* L -> L */
+    Dx1, Dx2, Dx3   /* B -> D */
+};
+
+int phi_y[18] = {
+    Ux1, Ux2, Ux3,  /* U -> U */
+    Bx1, Bx2, Bx3,  /* R -> B */
+    Rx1, Rx2, Rx3,  /* F -> R */
+    Dx1, Dx2, Dx3,  /* D -> D */
+    Fx1, Fx2, Fx3,  /* L -> F */
+    Lx1, Lx2, Lx3   /* B -> L */
+};
+
+int phi_z[18] = {
+    Lx1, Lx2, Lx3,  /* U -> L */
+    Ux1, Ux2, Ux3,  /* R -> U */
+    Fx1, Fx2, Fx3,  /* F -> F */
+    Rx1, Rx2, Rx3,  /* D -> R */
+    Dx1, Dx2, Dx3,  /* L -> D */
+    Bx1, Bx2, Bx3   /* B -> B */
+};
+
 /*
  * Phase 3 move set (20 moves): outer U/F/D/B (×3), R2/L2 only, wide as
  * half-turns only.

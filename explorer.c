@@ -1,7 +1,7 @@
 #include "alg.h"
 #include "cube4.h"
 #include "4x4-solver/include/search.h"
-#include "4x4-solver/include/cubie.h"
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,18 +42,18 @@ static void print_face_row(const CubeState4 *s, int base, int row) {
 /*
  * Unfolded net -- each cell is 3 terminal columns wide:
  *
- *             U U U U
- *             U U U U
- *             U U U U
- *             U U U U
+ *            U U U U
+ *            U U U U
+ *            U U U U
+ *            U U U U
  *  L L L L   F F F F   R R R R   B B B B
  *  L L L L   F F F F   R R R R   B B B B
  *  L L L L   F F F F   R R R R   B B B B
  *  L L L L   F F F F   R R R R   B B B B
- *             D D D D
- *             D D D D
- *             D D D D
- *             D D D D
+ *            D D D D
+ *            D D D D
+ *            D D D D
+ *            D D D D
  *
  * L occupies 4 stickers = 12 chars, so U/D are indented by 12.
  */
@@ -102,7 +102,7 @@ static void cube4_to_facelet96(const CubeState4 *s, char buf[97]) {
 }
 
 
-static void do_solve(CubeState4 *cube) {
+static void do_solve(CubeState4 *cube, bool orient) {
     static int tpr_ready;
     if (!tpr_ready) {
         tpr_set_kok_path("4x4-solver/ckociemba/cprunetables");
@@ -122,7 +122,7 @@ static void do_solve(CubeState4 *cube) {
     char sol_buf[512];
     struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    int n_tpr = tpr_solve(facelet96, sol_buf, sizeof(sol_buf));
+    int n_tpr = tpr_solve(facelet96, sol_buf, sizeof(sol_buf), orient);
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
     if (n_tpr < 0) {
@@ -139,7 +139,7 @@ static void do_solve(CubeState4 *cube) {
     Alg a = {0};
     alg_parse(sol_buf, &a);
     char *sol_str = alg_to_string(&a);
-    printf("\n  Solution (%d moves, %.1f ms): %s\n", a.len, total_ms,
+    printf("\n  Solution (%d moves, %.1f ms): %s\n", n_tpr, total_ms,
            sol_str ? sol_str : sol_buf);
     free(sol_str);
 
@@ -159,7 +159,7 @@ int main(void) {
     printf("4x4 Cube Explorer\n");
     printf("Moves : U D L R F B (outer)  |  Uw Dw Lw Rw Fw Bw (wide / 2-layer)\n");
     printf("        append ' for inverse, 2 for half-turn -- e.g.  R U' Fw2  (Uw R')3\n");
-    printf("Commands: reset/r -- solved state  solve/s -- run TPR pipeline  facelet/f -- print 3x3 facelet string  q -- quit\n\n");
+    printf("Commands: reset/r -- solved state | solve/s -- solve (ends white-top/green-front) | solve raw/sr -- solve without reorientation | facelet/f -- print facelet string | q -- quit\n\n");
     print_cube(&cube);
 
     char line[1024];
@@ -186,18 +186,20 @@ int main(void) {
 
         if (strcmp(p, "solve") == 0 || strcmp(p, "s") == 0) {
             printf("Solving...\n");
-            do_solve(&cube);
+            do_solve(&cube, true);
+            continue;
+        }
+
+        if (strcmp(p, "solve raw") == 0 || strcmp(p, "sr") == 0) {
+            printf("Solving (no reorientation)...\n");
+            do_solve(&cube, false);
             continue;
         }
 
         if (strcmp(p, "facelet") == 0 || strcmp(p, "f") == 0) {
             char facelet96[97];
             cube4_to_facelet96(&cube, facelet96);
-            FullCube fc;
-            fullcube_from_facelet(&fc, facelet96);
-            char facelet54[55];
-            fullcube_to_333_facelet(&fc, facelet54);
-            printf("333 facelet: %s\n", facelet54);
+            printf("Facelet: %s\n", facelet96);
             continue;
         }
 

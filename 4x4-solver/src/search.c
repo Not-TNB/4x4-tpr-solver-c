@@ -19,7 +19,7 @@ void tpr_set_kok_path(const char *path) { kok_path = path; }
 
 /* -------------------------------------------------------------------------
  * Phase 1 -- IDA* over Center1 sym-class coordinate.
- * Goal: U/D axis oriented.  Move set: 27 moves.
+ * Goal: U/D axis oriented. Move set: 27 moves.
  * ------------------------------------------------------------------------- */
 
 static int p1_found;
@@ -440,6 +440,151 @@ void normalize_orientation(FullCube *fc) {
     }
 }
 
+/*
+ * Determine T1 (0-5) and T2 (0-3) rotation indices from center colors after
+ * Phase 3.  Does not modify fc.
+ *
+ * T1: which of {I, x, x', x2, z, z'} puts the U-color on U.
+ * T2: which of {I, y, y', y2}  puts the F-color on F after T1.
+ *
+ * These are the same rotations normalize_orientation() applies; recording
+ * them lets tpr_solve conjugate ckociemba's output instead of rotating the
+ * cube.
+ */
+static void get_orientation(FullCube *fc, int *t1_out, int *t2_out) {
+    static const int face_cg[6] = {0, 16, 8, 4, 20, 12};
+    CenterCube *cen = fullcube_get_center(fc);
+    int col[6];
+    for (int i = 0; i < 6; i++) col[i] = cen->ct[face_cg[i]];
+
+    int u = 0;
+    for (int i = 0; i < 6; i++) if (col[i] == 0) { u = i; break; }
+
+    /* t1_idx[u]: T1 rotation index for each white-face position.
+     * u=0→I(0), u=1→z'(5), u=2→x'(2), u=3→x2(3), u=4→z(4), u=5→x(1) */
+    static const int t1_idx[6] = {0, 5, 2, 3, 4, 1};
+    *t1_out = t1_idx[u];
+
+    /* For each T1 (indexed by u), which original face ends up at each
+     * canonical position?  face_after_t1[u][canonical] = original_face.
+     * Face indices: U=0 R=1 F=2 D=3 L=4 B=5.                           */
+    static const uint8_t face_after_t1[6][6] = {
+        {0,1,2,3,4,5},  /* I:  identity                                  */
+        {1,3,2,4,0,5},  /* z': R→U, U→L, L→D, D→R                       */
+        {2,1,3,5,4,0},  /* x': F→U, U→B, B→D, D→F                       */
+        {3,1,5,0,4,2},  /* x2: D↔U, F↔B                                  */
+        {4,0,2,1,3,5},  /* z:  L→U, U→R, R→D, D→L                       */
+        {5,1,0,2,4,3},  /* x:  B→U, U→F, F→D, D→B                       */
+    };
+
+    /* Find which canonical face (not U=0, not D=3) holds green (color 2)
+     * after T1.  Default f=2 handles "already at F".                    */
+    int f = 2;
+    for (int ci = 0; ci < 6; ci++) {
+        if (ci == 0 || ci == 3) continue;
+        if (col[face_after_t1[u][ci]] == 2) { f = ci; break; }
+    }
+
+    /* t2_map[f]: T2 index.  f=2→I(0), f=1→y(1), f=4→y'(2), f=5→y2(3) */
+    static const int t2_map[6] = {-1, 1, 0, -1, 2, 3};
+    *t2_out = t2_map[f];
+}
+
+/*
+ * Tokenise ckociemba's space-separated move string, conjugate each move by
+ * T = T2·T1 (T1 applied first during normalisation), and append to buf.
+ *
+ * Conjugation rule: φ_T(m) = T1⁻¹(T2⁻¹ m T2)T1.
+ * Applied as: look up fo_t2[t2][face], then fo_t1[t1][result].
+ * This is REVERSE of normalisation order (T2 first, then T1).
+ */
+static void conjugate_kok_sol(const char *sol333, int t1, int t2,
+                               char *buf, int *pos, int buf_len) {
+    if (!sol333) return;
+
+    /* fo_t1[t1][canonical_face] = original_face
+     * t1: 0=I, 1=x, 2=x', 3=x2, 4=z, 5=z'                            */
+    static const uint8_t fo_t1[6][6] = {
+        {0,1,2,3,4,5},  /* I  */
+        {5,1,0,2,4,3},  /* x  */
+        {2,1,3,5,4,0},  /* x' */
+        {3,1,5,0,4,2},  /* x2 */
+        {4,0,2,1,3,5},  /* z  */
+        {1,3,2,4,0,5},  /* z' */
+    };
+    /* fo_t2[t2][canonical_face] = original_face
+     * t2: 0=I, 1=y, 2=y', 3=y2                                         */
+    static const uint8_t fo_t2[4][6] = {
+        {0,1,2,3,4,5},  /* I  */
+        {0,5,1,3,2,4},  /* y  */
+        {0,2,4,3,5,1},  /* y' */
+        {0,4,5,3,1,2},  /* y2 */
+    };
+    static const char face_chars[6] = "URFDLB";
+
+    const char *p = sol333;
+    while (*p) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+
+        int f;
+        switch (*p) {
+            case 'U': f = 0; break; case 'R': f = 1; break;
+            case 'F': f = 2; break; case 'D': f = 3; break;
+            case 'L': f = 4; break; case 'B': f = 5; break;
+            default:  while (*p && *p != ' ') p++; continue;
+        }
+        p++;
+
+        int power = 0;
+        if      (*p == '2')  { power = 1; p++; }
+        else if (*p == '\'') { power = 2; p++; }
+
+        int orig_f = fo_t1[t1][fo_t2[t2][f]];
+
+        if (*pos > 0 && *pos < buf_len - 1) buf[(*pos)++] = ' ';
+        if (*pos < buf_len - 1) buf[(*pos)++] = face_chars[orig_f];
+        if (power == 1 && *pos < buf_len - 1) buf[(*pos)++] = '2';
+        if (power == 2 && *pos < buf_len - 1) buf[(*pos)++] = '\'';
+    }
+    if (*pos < buf_len) buf[*pos] = '\0';
+}
+
+/* Append the T1 then T2 rotation wide-moves so the solved cube ends up in
+ * white-top / green-front orientation.  Only called when orient == true.  */
+static void append_orient_moves(int t1, int t2, char *buf, int *pos, int buf_len) {
+    static const int t1_alg[6][2] = {
+        {-1,   -1  },  /* I  */
+        {Rwx3, Lwx1},  /* x  */
+        {Rwx1, Lwx3},  /* x' */
+        {Rwx2, Lwx2},  /* x2 */
+        {Fwx1, Bwx3},  /* z  */
+        {Fwx3, Bwx1},  /* z' */
+    };
+    static const int t2_alg[4][2] = {
+        {-1,   -1  },  /* I  */
+        {Uwx1, Dwx3},  /* y  */
+        {Uwx3, Dwx1},  /* y' */
+        {Uwx2, Dwx2},  /* y2 */
+    };
+
+    for (int i = 0; i < 2; i++) {
+        int m = t1_alg[t1][i];
+        if (m < 0) break;
+        if (*pos > 0 && *pos < buf_len - 1) buf[(*pos)++] = ' ';
+        int w = snprintf(buf + *pos, (size_t)(buf_len - *pos), "%s", move2str[m]);
+        if (w > 0 && *pos + w < buf_len) *pos += w;
+    }
+    for (int i = 0; i < 2; i++) {
+        int m = t2_alg[t2][i];
+        if (m < 0) break;
+        if (*pos > 0 && *pos < buf_len - 1) buf[(*pos)++] = ' ';
+        int w = snprintf(buf + *pos, (size_t)(buf_len - *pos), "%s", move2str[m]);
+        if (w > 0 && *pos + w < buf_len) *pos += w;
+    }
+    if (*pos < buf_len) buf[*pos] = '\0';
+}
+
 
 void tpr_init(void) {
     build_pascal_triangle();
@@ -457,7 +602,7 @@ static double ms_since(struct timespec t0) {
     return (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) * 1e-6;
 }
 
-int tpr_solve(const char *facelet96, char *buf, int buf_len) {
+int tpr_solve(const char *facelet96, char *buf, int buf_len, bool orient) {
     tpr_diag.p1_ms = 0; tpr_diag.p2_ms = 0; tpr_diag.p3_ms = 0;
     tpr_diag.n1 = 0;
 
@@ -483,12 +628,20 @@ int tpr_solve(const char *facelet96, char *buf, int buf_len) {
     if (!search3(beam2, n2, &result)) return -1;
     tpr_diag.p3_ms = ms_since(tp);
 
-    normalize_orientation(&result);
+    /* Determine orientation from center colors without mutating result. */
+    int t1, t2;
+    get_orientation(&result, &t1, &t2);
 
-    int n = get_move_string(&result, buf, buf_len);
+    get_move_string(&result, buf, buf_len);
+    int pos = (int)strlen(buf);
+
+    /* Normalise a copy for fullcube_to_333_facelet; result stays unmutated. */
+    FullCube norm;
+    fullcube_copy(&norm, &result);
+    normalize_orientation(&norm);
 
     char facelet54[55];
-    fullcube_to_333_facelet(&result, facelet54);
+    fullcube_to_333_facelet(&norm, facelet54);
 
     static const int center_pos[6] = {4, 13, 22, 31, 40, 49};
     static const char expected[6] = "URFDLB";
@@ -516,11 +669,20 @@ int tpr_solve(const char *facelet96, char *buf, int buf_len) {
         sol_333 = solution(facelet54, 25, 60000, 0, KOK_PATH);
 #undef KOK_TIMEOUT_MS
 
-    if (sol_333) {
-        int pos = (int)strlen(buf);
-        if (pos > 0 && pos < buf_len - 1) buf[pos++] = ' ';
-        snprintf(buf + pos, (size_t)(buf_len - pos), "%s", sol_333);
-        free(sol_333);
+    /* Conjugate ckociemba's canonical-frame moves into the original frame. */
+    conjugate_kok_sol(sol_333, t1, t2, buf, &pos, buf_len);
+    free(sol_333);
+
+    /* Count total solving moves (P1-P3 + kok) before appending orient moves. */
+    int solve_moves = 0;
+    for (int i = 0, in_tok = 0; i < pos; i++) {
+        if (buf[i] == ' ') in_tok = 0;
+        else if (!in_tok) { in_tok = 1; solve_moves++; }
     }
-    return n;
+
+    /* If orient requested, append rotation moves to reach white-top/green-front. */
+    if (orient)
+        append_orient_moves(t1, t2, buf, &pos, buf_len);
+
+    return solve_moves;
 }

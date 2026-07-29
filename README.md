@@ -90,12 +90,15 @@ make
 
 | Command | Action |
 |---------|--------|
-| `solve` / `s` | solve the current cube state |
+| `solve` / `s` | solve and reorient to white-top / green-front |
+| `solve raw` / `sr` | solve without any reorientation moves |
 | `reset` / `r` | return to solved state |
 | `facelet` / `f` | print the 3×3 facelet string for the current state |
 | `q` | quit |
 
-The solve command prints per-phase timing (P1/P2/P3/P4) and the full solution string, then applies the solution so the final state is shown.
+Both solve commands print per-phase timing (P1/P2/P3/P4), the full solution string, and the reported move count. The move count excludes any trailing reorientation moves — only the actual solving moves are counted.
+
+`solve` appends up to four wide-move pairs (e.g. `Rw Lw' Uw Dw'`) at the end of the solution to leave the cube in white-top / green-front orientation. `solve raw` omits them, leaving the cube solved in whatever orientation it was scrambled in.
 
 ## Using `tpr_solve` in your own project
 

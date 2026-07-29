@@ -10,6 +10,7 @@
  */
 
 #include "cubie.h"
+#include <stdbool.h>
 
 #define SEARCH_BEAM1_MAX 3000
 #define SEARCH_BEAM2_MAX 100
@@ -51,11 +52,26 @@ typedef struct {
 } TprDiag;
 extern TprDiag tpr_diag;
 
-/* Rotate to canonical orientation after Phase 3. */
+/*
+ * Reduce a 96-char facelet string into a solvable 3x3;
+ * writes move string into buf, returns move count or -1.
+ * NOTE: Cube left in arbitrary orientation */
+int tpr_reduce(const char *facelet96, char *buf, int buf_len);
+
+/*
+ * Rotate to canonical orientation after Phase 3.
+ * Helper for tpr_solve */
 void normalize_orientation(FullCube *fc);
 
-/* Solve from a 96-char facelet string; writes move string into buf, returns move count or -1. */
-int tpr_solve(const char *facelet96, char *buf, int buf_len);
+/*
+ * Solves a 4x4 from a 96-char facelet string.
+ * orient=false: solution works on the cube in its original orientation.
+ * orient=true:  appends rotation moves to end in white-top/green-front. */
+int tpr_solve(const char *facelet96, char *buf, int buf_len, bool orient);
+
+/* Like tpr_solve, but on a 4x4 supercube i.e. duplicate dedges and centers are considered distinct.
+ * TODO implement */
+int tpr_solve_supercube(const char *facelet96, char *buf, int buf_len);
 
 /* Build all phase tables. Must be called once before tpr_solve(). */
 void tpr_init(void);
