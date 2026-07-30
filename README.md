@@ -116,10 +116,16 @@ tpr_init();
 // row-major within each face, faces in order U R F D L B.
 // Valid characters: U R F D L B (one per face colour).
 char solution[512];
-int n = tpr_solve(facelet96, solution, sizeof(solution));
+int n = tpr_solve(facelet96, solution, sizeof(solution), false);
 // n  >= 0: success; solution[] holds the full move string, e.g. "U Rw2 F' … R U'"
 // n  == -1: no solution found (invalid or unsolvable cube)
+// The returned n counts only solving moves; it excludes any trailing reorientation moves.
 ```
+
+**`orient` parameter:**
+
+- `orient=false` — solution leaves the cube solved in whatever orientation it started. No rotation moves are appended. Use this when you only care that the cube is solved.
+- `orient=true` — appends wide-move rotations after the solution so the cube ends in white-top / green-front orientation. The returned move count `n` still excludes these trailing rotation moves.
 
 **Facelet string format** — 96 characters, faces in order U R F D L B, each face
 read row-major (top-left → bottom-right across a 4×4 grid).  The character for
